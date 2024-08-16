@@ -1,11 +1,12 @@
-Licence
+TAMPEST
 -------
 
-These files are released with the sole purpose of
-reproducing/inspecting the experimental analysis of the paper
-"A Meta-Engine Framework for Interleaved Task and Motion Planning using Topological Refinements".
+Task and Motion Planning (TAMP) addresses finding solutions to automated planning problems that involve discrete actions executed by low-level continuous motions. This field is increasingly important in robotics, as it greatly enhances robot autonomy in real-world applications. Although various solutions and formulations exist, no standard representation has yet emerged. In this project, we propose a general, open-source framework for modeling and benchmarking TAMP problems. We introduce an innovative meta-technique for solving TAMP challenges involving moving agents and multiple task-state-dependent obstacles. This approach allows the use of any off-the-shelf task and motion planner, while leveraging geometric analysis to prune the task planner's search space, improving efficiency. Additionally, we specialize this meta-engine for an incremental SMT-based planner, TAMPEST (Task and Motion Planning by Encoding into Satisfiability Testing). Our framework includes a suite of benchmark problems of increasing complexity, where robots navigate environments with movable obstacles, and integrates the state-of-the-art PDDLStream solver.
 
-Any other use is forbidden without prior written consent from the authors.
+Citation
+--------
+
+E. Tosello, A. Valentini, A. Micheli. A Meta-Engine Framework for Interleaved Task and Motion Planning using Topological Refinements. ECAI, 2024 (to appear).
 
 Info
 -----
