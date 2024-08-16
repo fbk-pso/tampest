@@ -1,0 +1,8 @@
+free_thresh: 0.1
+image: 10rovers.png
+negate: 0
+occupied_thresh: 0.3
+origin:
+- 0
+- 0
+resolution: 0.1

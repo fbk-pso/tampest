@@ -1,0 +1,329 @@
+2D:
+  # WORLD DESCRIPTION
+  world:
+    file: "resources/2D/delivery.yaml"
+    ref_frame: (0, 0)
+
+  # DOOR DESCRIPTION
+  door:
+    footprint: "[(-7.5, 1), (7.5, 1), (7.5, -1), (-7.5, -1)]"
+    motion_model: SE2
+
+  # ROBOT DESCRIPTION
+  robot:
+    footprint: "[(-5, 5), (5, 5), (5, -5), (-5, -5)]"
+    motion_model: REEDSSHEPP
+    params: "{'turning_radius': 2.0}"
+    max_capacity: 4
+
+  # DOOR CONFIGURATIONS
+  door_configs:
+    - name: d0
+      open: (40, 158.5, 0)
+      close: (60, 158.5, 0)
+    - name: d1
+      open: (53, 118, 1.57)
+      close: (53, 98, 1.57)
+    - name: d2
+      open: (35, 82, 0)
+      close: (15, 82, 0)
+    - name: d3
+      open: (99, 76, 1.57)
+      close: (99, 96, 1.57)
+    - name: d4
+      open: (123, 98, 1.57)
+      close: (123, 117, 1.57)
+    - name: d5
+      open: (112, 158.5, 0)
+      close: (128.5, 158.5, 0)
+    - name: d6
+      open: (205, 158.5, 0)
+      close: (221, 158.5, 0)
+    - name: d7
+      open: (132, 135, 0)
+      close: (152, 135, 0)
+    - name: d8
+      open: (214.5, 116, 1.57)
+      close: (214.5, 96, 1.57)
+    - name: d9
+      open: (195, 79, 0)
+      close: (175, 79, 0)
+
+  # AVAILABLE CONFIGURATIONS
+  robot_configs:
+    - name: c0
+      pose: (13.0, 190.0, 0)
+    - name: c1
+      pose: (40, 142.5, 0)
+    - name: c2
+      pose: (80, 120, 0)
+    - name: c3
+      pose: (53, 74, 0)
+    - name: c4
+      pose: (125, 74, 0)
+    - name: c5
+      pose: (152, 97, 0)
+    - name: c6
+      pose: (115, 168, 0)
+    - name: c7
+      pose: (175, 142.5, 0)
+    - name: c8
+      pose: (221, 120, 0)
+    - name: u1
+      pose: (93.1, 45, 0)
+    - name: u2
+      pose: (108.1, 45, 0)
+    - name: u3
+      pose: (128.1, 45, 0)
+    - name: u4
+      pose: (143.1, 45, 0)
+    - name: u5
+      pose: (93.1, 30, 0)
+    - name: u6
+      pose: (108.1, 30, 0)
+    - name: u7
+      pose: (128.1, 30, 0)
+    - name: u8
+      pose: (143.1, 30, 0)
+
+  parcel_configs:
+    - name: t1
+      pose: (40, 142.5, 0)
+    - name: t2
+      pose: (80, 120, 0)
+    - name: t3
+      pose: (53, 74, 0)
+    - name: t4
+      pose: (125, 74, 0)
+    - name: t5
+      pose: (152, 97, 0)
+    - name: t6
+      pose: (115, 168, 0)
+    - name: t7
+      pose: (175, 142.5, 0)
+    - name: t8
+      pose: (221, 120, 0)
+    - name: u5
+      pose: (93.1, 30, 0)
+    - name: u6
+      pose: (108.1, 30, 0)
+    - name: u7
+      pose: (128.1, 30, 0)
+    - name: u8
+      pose: (143.1, 30, 0)
+    - name: u9
+      pose: (93.1, 15, 0)
+    - name: u10
+      pose: (108.1, 15, 0)
+    - name: u11
+      pose: (128.1, 15, 0)
+    - name: u12
+      pose: (143.1, 15, 0)
+
+  unload_configs:
+    - color: red
+      config:
+        - u5
+        - u6
+        - u7
+        - u8
+    - color: green
+      config:
+        - u9
+        - u10
+        - u11
+        - u12
+
+  matchings:
+    - from: c1
+      to: t1
+    - from: c2
+      to: t2
+    - from: c3
+      to: t3
+    - from: c4
+      to: t4
+    - from: c5
+      to: t5
+    - from: c6
+      to: t6
+    - from: c7
+      to: t7
+    - from: c8
+      to: t8
+    - from: u1
+      to: u5
+    - from: u2
+      to: u6
+    - from: u3
+      to: u7
+    - from: u4
+      to: u8
+    - from: u5
+      to: u9
+    - from: u6
+      to: u10
+    - from: u7
+      to: u11
+    - from: u8
+      to: u12
+ 
+3D:
+  # WORLD DESCRIPTION
+  world:
+    file: "resources/3D/delivery.yaml"
+    ref_frame: (0, 0)
+
+  # DOOR DESCRIPTION
+  door:
+    model: resources/3D/door.dae
+    motion_model: SE3
+
+  # ROBOT DESCRIPTION
+  robot:
+    model: resources/3D/robot.dae
+    motion_model: SE3
+
+  # DOOR CONFIGURATIONS
+  door_configs:
+    - name: d0
+      open: (-24.0, 15.0, 0, 0, 0, 1, 1.57)
+      close: (-19.0, 15.0, 0, 0, 0, 1, 1.57)
+    - name: d1
+      open: (-20, 4.0, 0, 0, 0, 0, 0)
+      close: (-20, 0.5, 0, 0, 0, 0, 0)
+    - name: d2
+      open: (-25, -3, 0, 0, 0, 1, 1.57)
+      close: (-31, -3, 0, 0, 0, 1, 1.57)
+    - name: d3
+      open: (-6, -7, 0, 0, 0, 0, 0)
+      close: (-6, -2, 0, 0, 0, 0, 0)
+    - name: d4
+      open: (2, 0.5, 0, 0, 0, 0, 0)
+      close: (2, 5, 0, 0, 0, 0, 0)
+    - name: d5
+      open: (26, 19, 0, 0, 0, 1, 1.57)
+      close: (32, 19, 0, 0, 0, 1, 1.57)
+    - name: d6
+      open: (31, 5, 0, 0, 0, 0, 0)
+      close: (31, 0.5, 0, 0, 0, 0, 0)
+
+
+  # AVAILABLE CONFIGURATIONS
+  robot_configs:
+    - name: c0
+      pose: (-33.0, 25.0, 0, 0, 0, 0, 0)
+    - name: c1
+      pose: (-20.0, 13.0, 0, 0, 0, 0, 0)
+    - name: c2
+      pose: (-24, -9.0, 0, 0, 0, 0, 0)
+    - name: c3
+      pose: (-4.0, -3.0, 0, 0, 0, 0, 0)
+    - name: c4
+      pose: (-4.0, 21.0, 0, 0, 0, 0, 0)
+    - name: c5
+      pose: (5.0, 13.0, 0, 0, 0, 0, 0)
+    - name: c6
+      pose: (16.0, 21.0, 0, 0, 0, 0, 0)
+    - name: c7
+      pose: (26.0, 5.0, 0, 0, 0, 0, 0)
+    - name: c8
+      pose: (19.0, -3.0, 0, 0, 0, 0, 0)
+    - name: u1
+      pose: (-8.0, -18.0, 0, 0, 0, 0, 0)
+    - name: u2
+      pose: (-4.0, -18.0, 0, 0, 0, 0, 0)
+    - name: u3
+      pose: (4.0, -18.0, 0, 0, 0, 0, 0)
+    - name: u4
+      pose: (8.0, -18.0, 0, 0, 0, 0, 0)
+    - name: u5
+      pose: (-8.0, -22.0, 0, 0, 0, 0, 0)
+    - name: u6
+      pose: (-4.0, -22.0, 0, 0, 0, 0, 0)
+    - name: u7
+      pose: (4.0, -22.0, 0, 0, 0, 0, 0)
+    - name: u8
+      pose: (8.0, -22.0, 0, 0, 0, 0, 0)
+
+  parcel_configs:
+    - name: t1
+      pose: (-24, 13.0, 0, 0, 0, 0, 0)
+    - name: t2
+      pose: (-20, -9, 0, 0, 0, 0, 0)
+    - name: t3
+      pose: (-4.0, 1.0, 0, 0, 0, 0, 0)
+    - name: t4
+      pose: (0.0, 21.0, 0, 0, 0, 0, 0)
+    - name: t5
+      pose: (9.0, 13.0, 0, 0, 0, 0, 0)
+    - name: t6
+      pose: (20.0, 21.0, 0, 0, 0, 0, 0)
+    - name: t7
+      pose: (26.0, 1.0, 0, 0, 0, 0, 0)
+    - name: t8
+      pose: (19.0, -7.0, 0, 0, 0, 0, 0)
+    - name: u5
+      pose: (-8.0, -22.0, 0, 0, 0, 0, 0)
+    - name: u6
+      pose: (-4.0, -22.0, 0, 0, 0, 0, 0)
+    - name: u7
+      pose: (4.0, -22.0, 0, 0, 0, 0, 0)
+    - name: u8
+      pose: (8.0, -22.0, 0, 0, 0, 0, 0)
+    - name: u9
+      pose: (-8.0, -26.0, 0, 0, 0, 0, 0)
+    - name: u10
+      pose: (-4.0, -26.0, 0, 0, 0, 0, 0)
+    - name: u11
+      pose: (4.0, -26.0, 0, 0, 0, 0, 0)
+    - name: u12
+      pose: (8.0, -26.0, 0, 0, 0, 0, 0)
+
+  unload_configs:
+    - color: red
+      config:
+        - u5
+        - u6
+        - u7
+        - u8
+    - color: green
+      config:
+        - u9
+        - u10
+        - u11
+        - u12
+
+  matchings:
+    - from: c1
+      to: t1
+    - from: c2
+      to: t2
+    - from: c3
+      to: t3
+    - from: c4
+      to: t4
+    - from: c5
+      to: t5
+    - from: c6
+      to: t6
+    - from: c7
+      to: t7
+    - from: c8
+      to: t8
+    - from: u1
+      to: u5
+    - from: u2
+      to: u6
+    - from: u3
+      to: u7
+    - from: u4
+      to: u8
+    - from: u5
+      to: u9
+    - from: u6
+      to: u10
+    - from: u7
+      to: u11
+    - from: u8
+      to: u12

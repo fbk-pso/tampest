@@ -1,0 +1,11 @@
+robots:
+  - name: r1
+    start: c0
+    goals:
+      - c4
+
+obstacles:
+  - name: d0
+    start: close
+  - name: d2
+    start: close

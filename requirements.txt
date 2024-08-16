@@ -1,0 +1,16 @@
+git+https://github.com/pysmt/pysmt
+matplotlib
+shapely
+Pillow
+pyyaml
+opencv-python-headless
+scipy==1.9.1
+descartes==1.1.0
+numpy==1.24.0
+git+https://github.com/enthought/mayavi/zipball/master
+trimesh
+pycollada 
+python-fcl
+configobj
+mayavi
+unified-planning[fast-downward,enhsp,tamer]==1.1.0.46.dev1

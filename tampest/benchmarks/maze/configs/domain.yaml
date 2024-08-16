@@ -1,0 +1,148 @@
+2D:
+  # WORLD DESCRIPTION
+  world:
+    file: "resources/2D/maze.yaml"
+    ref_frame: (0, 0)
+
+  # DOOR DESCRIPTION
+  door:
+    footprint: "[(-7.5, 1), (7.5, 1), (7.5, -1), (-7.5, -1)]"
+    motion_model: SE2 
+
+  # ROBOT DESCRIPTION
+  robot:
+    footprint: "[(-5, 5), (5, 5), (5, -5), (-5, -5)]"
+    motion_model: REEDSSHEPP
+    params: "{'turning_radius': 2.0}" 
+
+  # DOOR CONFIGURATIONS
+  door_configs:
+    - name: d0
+      open: (40, 118.5, 0)
+      close: (60, 118.5, 0)
+    - name: d1
+      open: (53, 78, 1.57)
+      close: (53, 58, 1.57)
+    - name: d2
+      open: (35, 42, 0)
+      close: (15, 42, 0)
+    - name: d3
+      open: (99, 36, 1.57)
+      close: (99, 56, 1.57)
+    - name: d4
+      open: (123, 58, 1.57)
+      close: (123, 77, 1.57)
+    - name: d5
+      open: (112, 118.5, 0)
+      close: (128.5, 118.5, 0)
+    - name: d6
+      open: (205, 118.5, 0)
+      close: (221, 118.5, 0)
+    - name: d7
+      open: (132, 95, 0)
+      close: (152, 95, 0)
+    - name: d8
+      open: (214.5, 76, 1.57)
+      close: (214.5, 56, 1.57)
+    - name: d9
+      open: (195, 39, 0)
+      close: (175, 39, 0) 
+
+  # ROBOT CONFIGURATIONS
+  robot_configs:
+    - name: c0
+      pose: (13.0, 150.0, 0)
+    - name: c1
+      pose: (40, 102.5, 0)
+    - name: c2
+      pose: (80, 80, 0)
+    - name: c3
+      pose: (53, 34, 0)
+    - name: c4
+      pose: (125, 34, 0)
+    - name: c5
+      pose: (152, 57, 0)
+    - name: c6
+      pose: (115, 128, 0)
+    - name: c7
+      pose: (175, 102.5, 0)
+    - name: c8
+      pose: (221, 128, 0)
+    - name: c9
+      pose: (221, 80, 0)
+    - name: c10
+      pose: (221, 10, 0)  
+
+3D:
+  # WORLD DESCRIPTION
+  world:
+    file: "resources/3D/maze.yaml"
+    ref_frame: (0, 0, 0)  
+
+  # DOOR DESCRIPTION
+  door:
+    model: resources/3D/door.dae
+    motion_model: SE3 
+
+  # ROBOT DESCRIPTION
+  robot:
+    model: resources/3D/robot.dae
+    motion_model: SE3 
+
+  # DOOR OBJECTS
+  door_configs:
+    - name: d0
+      open: (-24.375, 9.375, 0, 0, 0, 1, 1.57)
+      close: (-18.75, 9.375, 0, 0, 0, 1, 1.57)
+    - name: d1
+      open: (-21, -1.685, 0, 0, 0, 0, 0)
+      close: (-21, -6.7485, 0, 0, 0, 0, 0)
+    - name: d2
+      open: (-26.25, -12.187, 0, 0, 0, 1, 1.57)
+      close: (-32.25, -12.187, 0, 0, 0, 1, 1.57)
+    - name: d3
+      open: (-12.937, -9, 0, 0, 0, 0, 0)
+      close: (-12.937, -14.437, 0, 0, 0, 0, 0)
+    - name: d4
+      open: (1.3875, -6.975, 0, 0, 0, 0, 0)
+      close: (1.3875, -0.9375, 0, 0, 0, 0, 0)
+    - name: d5
+      open: (-1.875, 12, 0, 0, 0, 1, 1.57)
+      close: (3.1125, 12, 0, 0, 0, 1, 1.57)
+    - name: d6
+      open: (5.3625, 4.5, 0, 0, 0, 1, 1.57)
+      close: (10.4793, 4.5, 0, 0, 0, 1, 1.57)
+    - name: d7
+      open: (27.375, 12.1875, 0, 0, 0, 1, 1.57)
+      close: (32.2976, 12.1875, 0, 0, 0, 1, 1.57)
+    - name: d8
+      open: (30.75, -1.65, 0, 0, 0, 0, 0)
+      close: (30.75, -7.5, 0, 0, 0, 0, 0)
+    - name: d9
+      open: (12.75, -12.1875, 0, 0, 0, 1, 1.57)
+      close: (18.375, -12.1875, 0, 0, 0, 1, 1.57) 
+
+  # ROBOT CONFIGURATIONS
+  robot_configs:
+    - name: c0
+      pose: (-33.35, 14.25, 0, 0, 0, 0, 0)
+    - name: c1
+      pose: (-25.125, 7.125, 0, 0, 0, 0, 0)
+    - name: c2
+      pose: (-12.375, 0, 0, 0, 0, 0, 0)
+    - name: c3
+      pose: (-22.5, -14.625, 0, 0, 0, 0, 0)
+    - name: c4
+      pose: (2.625, -14.625, 0, 0, 0, 0, 0)
+    - name: c5
+      pose: (10.425, -7.5, 0, 0, 0, 0, 0)
+    - name: c6
+      pose: (-3.375, 14.625, 0, 0, 0, 0, 0)
+    - name: c7
+      pose: (18.375, 6.75, 0, 0, 0, 0, 0)
+    - name: c8
+      pose: (33, 14.625, 0, 0, 0, 0, 0)
+    - name: c9
+      pose: (33, -0.375, 0, 0, 0, 0, 0)
+    - name: c10
+      pose: (33, -15, 0, 0, 0, 0, 0)  

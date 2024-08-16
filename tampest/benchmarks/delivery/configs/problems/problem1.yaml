@@ -1,0 +1,21 @@
+robots:
+  - name: r1
+    start: c0
+
+doors:
+  - name: d2
+    start: open
+
+parcels:
+  - name: p1
+    start: u5
+    color: red
+  - name: p2
+    start: t4
+    color: red
+  - name: p3
+    start: t6
+    color: green
+  - name: p4
+    start: t8
+    color: green

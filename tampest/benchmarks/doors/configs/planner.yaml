@@ -1,0 +1,10 @@
+task_planner: tampest
+motion_planner: RRT
+topological_refinement: NONE
+incremental: True
+step_horizon: 15
+motion_planning_time: 15.0
+interpolate: False
+simplified: False
+tolerance: 0.0
+distance: null
