@@ -1,4 +1,0 @@
-recursive-include benchmarks *.yaml
-recursive-include benchmarks *.dae
-recursive-include benchmarks *.png
-recursive-include benchmarks *.txt
