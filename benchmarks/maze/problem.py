@@ -1,17 +1,17 @@
-# Copyright (C) 2024-2025 PSO Unit, Fondazione Bruno Kessler
+# Copyright (C) 2024-2026 PSO Unit, Fondazione Bruno Kessler
 # This file is part of TAMPEST.
 #
 # TAMPEST is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published by
+# it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # TAMPEST is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU Lesser General Public License for more details.
+# GNU General Public License for more details.
 #
-# You should have received a copy of the GNU Lesser General Public License
+# You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 
@@ -194,7 +194,7 @@ class Maze:
                 doors_configs = {
                     l["name"]: (
                         SE3(*ast.literal_eval(l["open"])),
-                        SE2(*ast.literal_eval(l["close"])),
+                        SE3(*ast.literal_eval(l["close"])),
                     )
                     for l in domain_data["door_configs"]
                 }
@@ -263,7 +263,7 @@ class Maze:
         problem.add_action(move_robot)
 
         if nd > 0:
-            open_door = InstantaneousMotionAction(
+            open_door = InstantaneousAction(
                 f"open", door=Door, c_close=DoorConfig, c_open=DoorConfig
             )
             d = open_door.parameter("door")
@@ -273,7 +273,6 @@ class Maze:
             open_door.add_precondition(Equals(closed(d), c_close))
             open_door.add_precondition(Equals(opened(d), c_open))
             open_door.add_effect(door_at(d), c_open)
-            open_door.add_motion_constraint(Waypoints(d, c_close, [c_open]))
 
             problem.add_action(open_door)
 

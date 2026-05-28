@@ -1,17 +1,17 @@
-# Copyright (C) 2024-2025 PSO Unit, Fondazione Bruno Kessler
+# Copyright (C) 2024-2026 PSO Unit, Fondazione Bruno Kessler
 # This file is part of TAMPEST.
 #
 # TAMPEST is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published by
+# it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # TAMPEST is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU Lesser General Public License for more details.
+# GNU General Public License for more details.
 #
-# You should have received a copy of the GNU Lesser General Public License
+# You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 
@@ -38,6 +38,32 @@ class SupportedPlanner(Enum):
     RRTstar = auto()
     SBL = auto()
     STRRTstar = auto()
+
+
+def resolve_motion_params(
+    motion_planner: "SupportedPlanner",
+    distance: Optional[float],
+    requires_spacetime: bool,
+) -> Optional[float]:
+    """Validate the motion planner against the problem type and default the
+    obstacle inflation distance for STRRTstar.
+
+    STRRTstar is the only space-time planner and is meant exclusively for
+    temporal/scheduling problems; any other planner is meant for non-temporal
+    ones. A mismatch raises ValueError. When STRRTstar is used without an
+    explicit distance, it defaults to 5.0.
+    """
+    if requires_spacetime and motion_planner != SupportedPlanner.STRRTstar:
+        raise ValueError(
+            "Temporal/scheduling problems require the STRRTstar motion planner"
+        )
+    if not requires_spacetime and motion_planner == SupportedPlanner.STRRTstar:
+        raise ValueError(
+            "STRRTstar is only valid for temporal or scheduling problems"
+        )
+    if motion_planner == SupportedPlanner.STRRTstar and distance is None:
+        distance = 5.0
+    return distance
 
 
 class MotionPlanningData:

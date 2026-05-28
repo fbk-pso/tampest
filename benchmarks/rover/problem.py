@@ -1,17 +1,17 @@
-# Copyright (C) 2024-2025 PSO Unit, Fondazione Bruno Kessler
+# Copyright (C) 2024-2026 PSO Unit, Fondazione Bruno Kessler
 # This file is part of TAMPEST.
 #
 # TAMPEST is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published by
+# it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # TAMPEST is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU Lesser General Public License for more details.
+# GNU General Public License for more details.
 #
-# You should have received a copy of the GNU Lesser General Public License
+# You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 
@@ -272,7 +272,7 @@ class Rover:
             True,
         )
 
-        open_door = InstantaneousMotionAction(
+        open_door = InstantaneousAction(
             f"open", door=Door, c_close=DoorConfig, c_open=DoorConfig
         )
         d_open = open_door.parameter("door")
@@ -282,7 +282,6 @@ class Rover:
         open_door.add_precondition(Equals(closed(d_open), c_close))
         open_door.add_precondition(Equals(opened(d_open), c_open))
         open_door.add_effect(door_at(d_open), c_open)
-        open_door.add_motion_constraint(Waypoints(d_open, c_close, [c_open]))
 
         # problem
         problem = Problem("rover")
@@ -372,6 +371,9 @@ class Rover:
 
         for i in range(int(d / 2)):
             if dim == "3D":
+
+                import numpy as np
+
                 starts.append(
                     ConfigurationObject(
                         f"start{2*i}",
@@ -383,14 +385,31 @@ class Rover:
                     ConfigurationObject(
                         f"door{2*i}_closed",
                         DoorConfig,
-                        SE3(-18.0 - 37.0 * i, -13.0, 0, 0, 0, 1, 1.57),
+                        SE3(
+                            -18.0 - 37.0 * i,
+                            -12.0,
+                            0,
+                            0,
+                            0,
+                            np.sqrt(2) / 2,
+                            np.sqrt(2) / 2,
+                        ),
                     )
                 )
                 door_open_configs.append(
                     ConfigurationObject(
                         f"door{2*i}_open",
                         DoorConfig,
-                        SE3(-10.0 - 37 * i, -13.0, 0, 0, 0, 1, 1.57),
+                        SE3(
+                            -8.0 - 37 * i,
+                            # -18.0 - 37.0 * i,
+                            -12.0,
+                            0,
+                            0,
+                            0,
+                            np.sqrt(2) / 2,
+                            np.sqrt(2) / 2,
+                        ),
                     )
                 )
 
@@ -405,14 +424,31 @@ class Rover:
                     ConfigurationObject(
                         f"door{2*i+1}_closed",
                         DoorConfig,
-                        SE3(18.0 + 37 * i, -13.0, 0, 0, 0, 1, 1.57),
+                        SE3(
+                            18.0 + 37 * i,
+                            -12.0,
+                            0,
+                            0,
+                            0,
+                            np.sqrt(2) / 2,
+                            np.sqrt(2) / 2,
+                        ),
                     )
                 )
                 door_open_configs.append(
                     ConfigurationObject(
                         f"door{2*i+1}_open",
                         DoorConfig,
-                        SE3(10.0 + 37 * i, -13.0, 0, 0, 0, 1, 1.57),
+                        SE3(
+                            8.0 + 37 * i,
+                            # 18.0 + 37 * i,
+                            -12.0,
+                            0,
+                            0,
+                            0,
+                            np.sqrt(2) / 2,
+                            np.sqrt(2) / 2,
+                        ),
                     )
                 )
 

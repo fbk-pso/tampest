@@ -1,21 +1,21 @@
-# Copyright (C) 2024-2025 PSO Unit, Fondazione Bruno Kessler
+# Copyright (C) 2024-2026 PSO Unit, Fondazione Bruno Kessler
 # This file is part of TAMPEST.
 #
 # TAMPEST is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published by
+# it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # TAMPEST is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU Lesser General Public License for more details.
+# GNU General Public License for more details.
 #
-# You should have received a copy of the GNU Lesser General Public License
+# You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 
-from typing import Optional, List, Dict, Union
+from typing import Optional, List, Dict
 from PIL import Image
 import os
 import math
@@ -23,22 +23,29 @@ from matplotlib import patches
 from matplotlib import pyplot as plt
 from matplotlib.cm import get_cmap
 from matplotlib.patches import Polygon as MplPolygon
-from mayavi import mlab
 import numpy as np
 from trimesh import transformations
 import trimesh
 from tampest.motion.collision_checker import CollisionChecker2D, CollisionChecker3D
-from tampest.motion.map import Map2D, Map3D
-from unified_planning.shortcuts import ConfigurationObject, MovableObject, MotionModels
+from tampest.motion.map import Map, Map2D, Map3D
+from unified_planning.shortcuts import (
+    ConfigurationObject,
+    MovableObject,
+    MotionModels,
+    Object,
+)
 from scipy.spatial import ConvexHull
 from shapely.geometry import MultiPolygon
 
 from unified_planning.plans.time_triggered_plan import TimeTriggeredPlan
 from unified_planning.plans.sequential_plan import SequentialPlan
+from unified_planning.engines.results import PlanGenerationResult
+
+import pyvista as pv
 
 
 def plot_reachability_data(
-    map: Union[Map2D, Map3D],
+    map: Map,
     motion_model: MotionModels,
     *,
     hull: Optional[ConvexHull] = None,
@@ -88,70 +95,82 @@ def plot_3d_reachability_data(
     unreachable_configurations: Optional[List[ConfigurationObject]] = None,
 ):
 
-    mlab.figure()
+    plotter = pv.Plotter()
 
-    map_vertices = map.mesh.vertices
-    map_indices = map.mesh.faces
-    mlab.triangular_mesh(
-        map_vertices[:, 0],
-        map_vertices[:, 1],
-        map_vertices[:, 2],
-        map_indices,
-        opacity=1.0,
-        color=(0.5, 0.5, 0.5),
-    )  # representation='wireframe'
+    # plot map
+    env_vertices = map.mesh.vertices
+    env_faces = map.mesh.faces
+    faces = np.hstack((np.full((env_faces.shape[0], 1), 3), env_faces))
+    mesh = pv.PolyData(env_vertices, faces)
+    plotter.add_mesh(mesh, color="lightgrey", opacity=1.0)
 
-    if hull:
-        mlab.triangular_mesh(
-            hull.points[:, 0], hull.points[:, 1], hull.points[:, 2], hull.simplices
+    if hull and len(hull) == 1:
+
+        # PyVista expects a flattened connectivity array with face sizes prepended
+        faces = np.hstack([np.insert(face, 0, 3) for face in hull[0].faces])
+
+        hull_mesh = pv.PolyData(hull[0].vertices, faces)
+        plotter.add_mesh(hull_mesh, color="lightgrey", opacity=1.0)
+
+    if points and len(points) == 1:
+
+        cloud = pv.PolyData(points[0])
+        plotter.add_mesh(cloud, point_size=10, render_points_as_spheres=True)
+
+    for _, s in start_poses.items():
+
+        start_point = np.array(
+            [[s.configuration.x, s.configuration.y, s.configuration.z]]
         )
 
-    if points.any():
-        mlab.points3d(points[:, 0], points[:, 1], points[:, 2], scale_factor=1.0)
+        start_cloud = pv.PolyData(start_point)
 
-    for s in start_poses:
-        mlab.points3d(
-            s.configuration.x,
-            s.configuration.y,
-            s.configuration.theta,
-            scale_factor=1.0,
-            color=(0, 1, 0),
-        )  # green = (0, 1, 0)(RGB normalized)
+        plotter.add_mesh(
+            start_cloud,
+            color=(0, 1, 0),  # green
+        )
 
-    for g in goal_poses:
-        mlab.points3d(
-            g.configuration.x,
-            g.configuration.y,
-            g.configuration.theta,
-            scale_factor=1.0,
-            color=(0, 1, 0),
-        )  # green = (0, 1, 0)(RGB normalized)
+    for _, g in goal_poses.items():
+
+        goal_point = np.array(
+            [[g.configuration.x, g.configuration.y, g.configuration.z]]
+        )
+
+        goal_cloud = pv.PolyData(goal_point)
+
+        plotter.add_mesh(
+            goal_cloud,
+            color=(0, 1, 0),  # green
+        )
 
     if obstacles:
         for k, v in obstacles.items():
             obstacle_mesh = cc.get_obj_mesh(k, v.configuration)
-            obstacle_vertices = obstacle_mesh.vertices
-            obstacle_indices = obstacle_mesh.faces
-            mlab.triangular_mesh(
-                obstacle_vertices[:, 0],
-                obstacle_vertices[:, 1],
-                obstacle_vertices[:, 2],
-                obstacle_indices,
-                opacity=1.0,
-                color=(1, 0, 0),
-            )  # red = (1, 0, 0) (RGB normalized)
+
+            # PyVista expects a flattened connectivity array with face sizes prepended
+            faces = np.hstack([np.insert(face, 0, 3) for face in obstacle_mesh.faces])
+
+            obs_mesh = pv.PolyData(obstacle_mesh.vertices, faces)
+            plotter.add_mesh(obs_mesh, opacity=1.0, color=(1, 0, 0))  # red
 
     if unreachable_configurations:
-        for u in unreachable_configurations:
-            mlab.points3d(
-                u.configuration.x,
-                u.configuration.y,
-                u.configuration.theta,
-                scale_factor=1.0,
-                color=(1, 0, 0),
-            )  # red = (1, 0, 0)(RGB normalized)
+        for _, unreach in unreachable_configurations.items():
 
-    plt.show()
+            for u in unreach:
+
+                unreach_point = np.array(
+                    [[u.configuration.x, u.configuration.y, u.configuration.z]]
+                )
+
+                unreach_cloud = pv.PolyData(unreach_point)
+
+                plotter.add_mesh(
+                    unreach_cloud,
+                    opacity=1.0,
+                    color=(1, 0, 0),  # red
+                )
+
+    plotter.show()
 
 
 def plot_2d_reachability_data(
@@ -171,17 +190,20 @@ def plot_2d_reachability_data(
     cmap = get_cmap("tab10")  # Color map with 10 distinct colors
     keys = sorted(set(points.keys()) if points else set())
     key_to_color = {k: cmap(i % 10) for i, k in enumerate(keys)}
+    used_labels = set()
     for k in keys:
         color = key_to_color[k]
+        label = str(k) if k not in used_labels else None
         # Plot hulls if available
         if hull and k in hull and hull[k] is not None:
             if isinstance(hull[k], MultiPolygon):
-                for polygon in hull[k].geoms:
+                for i, polygon in enumerate(hull[k].geoms):
                     x, y = polygon.exterior.xy
-                    plt.plot(x, y, color=color, label=k, lw=1)
+                    lbl = label if i == 0 else None  # Only label first polygon
+                    plt.plot(x, y, color=color, label=lbl, lw=1)
             else:
                 x, y = hull[k].exterior.xy
-                plt.plot(x, y, color=color, label=k, lw=1)
+                plt.plot(x, y, color=color, label=label, lw=1)
 
         # Plot points
         if points and k in points and points[k] is not None:
@@ -273,7 +295,11 @@ def plot_2d_reachability_data(
 
 
 def plot_plan(
-    problem_objects, plan, *, save: Optional[bool] = False, name: Optional[str] = None
+    problem_objects: List[Object],
+    plan: PlanGenerationResult,
+    *,
+    save: Optional[bool] = False,
+    name: Optional[str] = None,
 ):
 
     for o in problem_objects:
@@ -291,9 +317,13 @@ def plot_plan(
 
 
 def plot_2d_plan(
-    problem_objects, plan, *, save: Optional[bool] = False, name: Optional[str] = None
+    problem_objects: List[Object],
+    plan: PlanGenerationResult,
+    *,
+    save: Optional[bool] = False,
+    name: Optional[str] = None,
 ):
-    ax = None
+    _, ax = plt.subplots()
     footprints = {}
     moving_objs = []
     map_file = None
@@ -319,8 +349,8 @@ def plot_2d_plan(
     # Caricare la mappa se disponibile
     if map_file:
         im = Image.open(map_file)
-        _, ax = plt.figimage(im)
-        # ax.imshow(im)
+        ax.imshow(im)
+        ax.set_aspect("equal")
 
     # Assegnare colori distinti agli oggetti mobili
     cmap = plt.get_cmap("rainbow", len(moving_objs))
@@ -351,8 +381,18 @@ def plot_2d_plan(
 
                 if str(r) == mo:
                     for v in a.motion_paths.values():
+
+                        if isinstance(plan.plan, SequentialPlan):
+                            v = v[0]
+
                         for points in v:
-                            x, y, w = points
+
+                            if isinstance(plan.plan, SequentialPlan):
+                                x, y, w = points
+                            elif isinstance(plan.plan, TimeTriggeredPlan):
+                                x, y, w, _, _, _ = points
+                            else:
+                                raise NotImplementedError
 
                             height = (
                                 footprints[str(r)][1][1] - footprints[str(r)][2][1]
@@ -406,14 +446,18 @@ def plot_2d_plan(
 
 
 def plot_3d_plan(
-    problem_objects, plan, *, save: Optional[bool] = False, name: Optional[str] = None
+    problem_objects: List[Object],
+    plan: PlanGenerationResult,
+    *,
+    save: Optional[bool] = False,
+    name: Optional[str] = None,
 ):
 
     meshes = {}
     moving_objs = []
     map_file = None
 
-    mlab.figure()
+    plotter = pv.Plotter()
 
     for o in problem_objects:
         if o.type.is_movable_type():
@@ -428,17 +472,15 @@ def plot_3d_plan(
                     map_file = filepath + os.sep + l.replace("mesh: ", "").strip()
 
     if map_file is not None and os.path.exists(map_file):
+
         map_mesh = trimesh.load(map_file, force="mesh")
-        map_vertices = map_mesh.vertices
-        map_indices = map_mesh.faces
-        mlab.triangular_mesh(
-            map_vertices[:, 0],
-            map_vertices[:, 1],
-            map_vertices[:, 2],
-            map_indices,
-            opacity=1.0,
-            color=(0.5, 0.5, 0.5),
-        )  # representation='wireframe'
+
+        env_vertices = map_mesh.vertices
+        env_faces = map_mesh.faces
+        faces = np.hstack((np.full((env_faces.shape[0], 1), 3), env_faces))
+        mesh = pv.PolyData(env_vertices, faces)
+        plotter.add_mesh(mesh, color="lightgrey", opacity=1.0)
+
     else:
         raise FileNotFoundError(f"File {map_file} not found.")
 
@@ -468,45 +510,33 @@ def plot_3d_plan(
 
                 if str(r) == mo:
                     for _, v in a.motion_paths.items():
-                        for points in v:
+                        for _, points in v.items():
 
-                            obj_at_current_state = meshes[mo].copy()
-                            T = transformations.translation_matrix(
-                                [points[0], points[1], points[2]]
-                            )
-                            # [w, x, y, z]
-                            R = transformations.quaternion_matrix(
-                                [points[3], points[4], points[5], points[6]]
-                            )
-                            tf = transformations.concatenate_matrices(T, R)
-                            obj_at_current_state.apply_transform(tf)
+                            for p in points:
 
-                            obj_vertices = obj_at_current_state.vertices
-                            obj_indices = obj_at_current_state.faces
-
-                            mlab.triangular_mesh(
-                                obj_vertices[:, 0],
-                                obj_vertices[:, 1],
-                                obj_vertices[:, 2],
-                                obj_indices,
-                                opacity=1.0,
-                                color=cmap[i],
-                            )
-
-                            if points_plotted:
-                                mlab.plot3d(
-                                    [points_plotted[-1][0], points[0]],
-                                    [points_plotted[-1][1], points[1]],
-                                    [points_plotted[-1][2], points[2]],
-                                    color=cmap[i],
-                                    tube_radius=0.1,
+                                obj_at_current_state = meshes[mo].copy()
+                                T = transformations.translation_matrix(
+                                    [p[0], p[1], p[2]]
                                 )
+                                # [w, x, y, z]
+                                R = transformations.quaternion_matrix(
+                                    [p[3], p[4], p[5], p[6]]
+                                )
+                                tf = transformations.concatenate_matrices(T, R)
+                                obj_at_current_state.apply_transform(tf)
 
-                            points_plotted.append((points[0], points[1], points[2]))
+                                obj_vertices = obj_at_current_state.vertices
+                                obj_faces = obj_at_current_state.faces
+
+                                faces = np.hstack(
+                                    (np.full((obj_faces.shape[0], 1), 3), obj_faces)
+                                )
+                                mesh = pv.PolyData(obj_vertices, faces)
+                                plotter.add_mesh(mesh, color=cmap[i], opacity=1.0)
 
         i += 1
 
     if save:
-        mlab.savefig(name)
+        plotter.save_graphic(name)
     else:
-        mlab.show()
+        plotter.show()

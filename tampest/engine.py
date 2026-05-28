@@ -1,17 +1,17 @@
-# Copyright (C) 2024-2025 PSO Unit, Fondazione Bruno Kessler
+# Copyright (C) 2024-2026 PSO Unit, Fondazione Bruno Kessler
 # This file is part of TAMPEST.
 #
 # TAMPEST is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published by
+# it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # TAMPEST is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU Lesser General Public License for more details.
+# GNU General Public License for more details.
 #
-# You should have received a copy of the GNU Lesser General Public License
+# You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 
@@ -27,10 +27,11 @@ from unified_planning.model import ProblemKind
 from unified_planning.engines import PlanGenerationResultStatus
 from unified_planning.engines import PlanGenerationResult
 from unified_planning.engines.compilers.utils import replace_action
-from unified_planning.model.tamp.action import (
+from unified_planning.model.motion.action import (
     InstantaneousMotionAction,
     DurativeMotionAction,
 )
+from unified_planning.model.timing import EndTiming, StartTiming, TimeInterval
 
 from tempest.encoders import IncrementalEncoder, MonolithicEncoder
 from tempest.engine import TempestEngine
@@ -38,6 +39,7 @@ from tempest.engine import TempestEngine
 from tampest.motion.motion_planning_data import (
     SupportedTopologicalRefinement,
     SupportedPlanner,
+    resolve_motion_params,
 )
 from tampest.utils import metrics_from_planning_data
 from tampest.check_plan import check_plan
@@ -57,9 +59,8 @@ class TampestEngine(up.engines.Engine, up.engines.mixins.OneshotPlannerMixin):
         motion_planning_time=3.0,
         interpolate=False,
         simplified=False,
-        tolerance=0.0,
         distance=None,
-        motion_planner=SupportedPlanner.RRT,
+        motion_planner=None,
         topological_refinement=SupportedTopologicalRefinement.ALL,
         max_radius_bound=False,
     ):
@@ -70,7 +71,6 @@ class TampestEngine(up.engines.Engine, up.engines.mixins.OneshotPlannerMixin):
         self._motion_planning_time = motion_planning_time
         self._interpolate = interpolate
         self._simplified = simplified
-        self._tolerance = tolerance
         self._distance = distance
         self._motion_planner = motion_planner
         self._topological_refinement = topological_refinement
@@ -104,6 +104,19 @@ class TampestEngine(up.engines.Engine, up.engines.mixins.OneshotPlannerMixin):
             warnings.warn("TemPEST does not support custom heuristics.", UserWarning)
 
         orig_problem = problem
+        requires_spacetime = any(
+            isinstance(a, DurativeMotionAction) for a in problem.actions
+        )
+        if self._motion_planner is None:
+            if requires_spacetime:
+                motion_planner = SupportedPlanner.STRRTstar
+            else:
+                motion_planner = SupportedPlanner.RRT
+        else:
+            motion_planner = self._motion_planner
+        distance = resolve_motion_params(
+            motion_planner, self._distance, requires_spacetime
+        )
         em = problem.environment.expression_manager
         pysmt_env = pysmt.environment.Environment()
         motion_planning_time = self._motion_planning_time
@@ -129,18 +142,18 @@ class TampestEngine(up.engines.Engine, up.engines.mixins.OneshotPlannerMixin):
                                     )
 
                 if isinstance(a, DurativeMotionAction):
-                    for t, mcl in a.timed_motion_constraints.items():
-                        for mc in mcl:
-                            if mc.static_obstacles:
-                                for mo, fe in mc.static_obstacles.items():
-                                    if mo.type == mc.movable.type:
-                                        a.add_condition(
-                                            t,
-                                            em.Implies(
-                                                em.Equals(mc.movable, mo),
-                                                em.Equals(mc.starting, fe),
-                                            ),
-                                        )
+                    t = TimeInterval(StartTiming(), EndTiming())
+                    for mc in a.motion_constraints:
+                        if mc.static_obstacles:
+                            for mo, fe in mc.static_obstacles.items():
+                                if mo.type == mc.movable.type:
+                                    a.add_condition(
+                                        t,
+                                        em.Implies(
+                                            em.Equals(mc.movable, mo),
+                                            em.Equals(mc.starting, fe),
+                                        ),
+                                    )
 
                 new_to_old[a] = orig_a
 
@@ -186,9 +199,8 @@ class TampestEngine(up.engines.Engine, up.engines.mixins.OneshotPlannerMixin):
                             motion_planning_time,
                             self._interpolate,
                             self._simplified,
-                            self._tolerance,
-                            self._distance,
-                            self._motion_planner,
+                            distance,
+                            motion_planner,
                             self._topological_refinement,
                             self._max_radius_bound,
                             motion_planning_data,

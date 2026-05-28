@@ -1,17 +1,17 @@
-# Copyright (C) 2024-2025 PSO Unit, Fondazione Bruno Kessler
+# Copyright (C) 2024-2026 PSO Unit, Fondazione Bruno Kessler
 # This file is part of TAMPEST.
 #
 # TAMPEST is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published by
+# it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # TAMPEST is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU Lesser General Public License for more details.
+# GNU General Public License for more details.
 #
-# You should have received a copy of the GNU Lesser General Public License
+# You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 
@@ -20,16 +20,18 @@ import warnings
 import unified_planning as up
 from unified_planning.model import ProblemKind
 from unified_planning.engines import PlanGenerationResultStatus, PlanGenerationResult
-from unified_planning.model.tamp import InstantaneousMotionAction
+from unified_planning.model.motion import InstantaneousMotionAction
+from unified_planning.model.motion.constraint import MotionConstraint
 from unified_planning.engines.compilers.usertype_fluents_remover import (
     UsertypeFluentsRemover,
 )
 from unified_planning.plans import ActionInstance
-from typing import IO, Callable, Optional, Type
+from typing import IO, Callable, Optional, Type, List, Dict
 from tampest.check_plan import check_plan
 from tampest.motion.motion_planning_data import (
     SupportedTopologicalRefinement,
     SupportedPlanner,
+    resolve_motion_params,
 )
 from tampest.utils import metrics_from_planning_data
 from functools import partial
@@ -41,7 +43,6 @@ class TampMetaEngine(up.engines.MetaEngine, up.engines.mixins.OneshotPlannerMixi
         motion_planning_time=3.0,
         interpolate=False,
         simplified=False,
-        tolerance=0.0,
         distance=None,
         motion_planner=SupportedPlanner.RRT,
         topological_refinement=SupportedTopologicalRefinement.ALL,
@@ -52,7 +53,6 @@ class TampMetaEngine(up.engines.MetaEngine, up.engines.mixins.OneshotPlannerMixi
         self._motion_planning_time = motion_planning_time
         self._interpolate = interpolate
         self._simplified = simplified
-        self._tolerance = tolerance
         self._distance = distance
         self._motion_planner = motion_planner
         self._topological_refinement = topological_refinement
@@ -114,15 +114,19 @@ class TampMetaEngine(up.engines.MetaEngine, up.engines.mixins.OneshotPlannerMixi
 
         orig_problem = problem
 
+        resolve_motion_params(
+            self._motion_planner, self._distance, requires_spacetime=False
+        )
+
         problem = problem.clone()
         motion_planning_time = self._motion_planning_time
-        mc_map = _prepare_problem(problem, orig_problem)
+        mc_map = _prepare_problem(problem)
         cache = {}
         motion_planning_data = {}
 
         while True:
             for a in mc_map.keys():
-                a._motion_constraints = []
+                a.clear_motion_constraints()
             timeout = None if deadline is None else deadline - time.time()
             if timeout is not None and timeout < 0:
                 break
@@ -149,10 +153,11 @@ class TampMetaEngine(up.engines.MetaEngine, up.engines.mixins.OneshotPlannerMixi
                 motion_planning_time *= 2
                 print("Restart with time budget", motion_planning_time)
                 problem = orig_problem.clone()
-                mc_map = _prepare_problem(problem, orig_problem)
+                mc_map = _prepare_problem(problem)
             else:
                 for a, mc in mc_map.items():
-                    a._motion_constraints = mc
+                    a.clear_motion_constraints()
+                    a.add_motion_constraints(mc)
                 is_valid, _, new_conds = check_plan(
                     cache,
                     problem,
@@ -160,7 +165,6 @@ class TampMetaEngine(up.engines.MetaEngine, up.engines.mixins.OneshotPlannerMixi
                     motion_planning_time,
                     self._interpolate,
                     self._simplified,
-                    self._tolerance,
                     self._distance,
                     self._motion_planner,
                     self._topological_refinement,
@@ -193,12 +197,14 @@ def _replace_action(action_instance, orig_problem):
     )
 
 
-def _prepare_problem(problem, orig_problem):
+def _prepare_problem(
+    problem,
+) -> Dict[InstantaneousMotionAction, List[MotionConstraint]]:
     em = problem.environment.expression_manager
     mc_map = {}
     for a in problem.actions:
         if isinstance(a, InstantaneousMotionAction):
-            mc_map[a] = a.motion_constraints
+            mc_map[a] = a.motion_constraints.copy()
             for mc in a.motion_constraints:
                 if mc.static_obstacles:
                     for mo, fe in mc.static_obstacles.items():

@@ -1,22 +1,16 @@
 numpy==1.26.1
 shapely==2.0.7
-scipy==1.15.2
 trimesh==4.6.6
 Pillow==10.2.0
 pyyaml==6.0.1
 opencv-python-headless==4.11.0.86
 pycollada==0.9
-configobj==5.0.8
 python-fcl==0.7.0.8
-ortools==9.12.4544
-networkx==3.4.2
-pyparsing==3.2.3
-ConfigSpace==1.2.1
-grpcio==1.71.0
-grpcio-tools==1.71.0
-matplotlib==3.8.3
 alphashape==1.3.1
-pysmt @ git+https://github.com/pysmt/pysmt@optimization
-mayavi @ git+https://github.com/enthought/mayavi@main
-descartes @ git+https://github.com/benjimin/descartes@master
-unified-planning[fast-downward,enhsp,tamer] @ git+https://github.com/aiplan4eu/unified-planning@tamp
+pysmt @ git+https://github.com/pysmt/pysmt.git
+ompl==1.7.0
+tempest @ git+https://github.com/fbk-pso/tempest.git
+# Optional — needed only for visualization (plotting.py, plot_current_state)
+matplotlib==3.8.3
+scipy==1.15.2
+pyvista==0.48.2

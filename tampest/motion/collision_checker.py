@@ -1,23 +1,25 @@
-# Copyright (C) 2024-2025 PSO Unit, Fondazione Bruno Kessler
+# Copyright (C) 2024-2026 PSO Unit, Fondazione Bruno Kessler
 # This file is part of TAMPEST.
 #
 # TAMPEST is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published by
+# it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # TAMPEST is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU Lesser General Public License for more details.
+# GNU General Public License for more details.
 #
-# You should have received a copy of the GNU Lesser General Public License
+# You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 
+import bisect
+from collections import defaultdict
 import math
 import os
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 import numpy as np
 from shapely.geometry import Polygon
 from ompl import base as ob
@@ -38,8 +40,16 @@ class CollisionChecker:
         map: Map,
         topological_refinement: SupportedTopologicalRefinement,
         index_map: Dict[int, int],
+        delays: Optional[Dict[int, float]] = None,
+        sequential_check: Optional[bool] = None,
+        trajectories: Optional[Dict[int, list]] = None,
+        safety_distance: Optional[float] = None,
         d_max: Optional[List[float]] = None,
         max_radius_bound: Optional[bool] = False,
+        all_movable_objects: Optional[Dict[int, MovableObject]] = None,
+        all_start_configs: Optional[Dict[int, ConfigurationObject]] = None,
+        all_goal_configs: Optional[Dict[int, ConfigurationObject]] = None,
+        action_timings: Optional[Dict[int, Tuple[float, float]]] = None,
     ) -> None:
 
         self.moving_objects = moving_objects
@@ -47,6 +57,14 @@ class CollisionChecker:
         self._collision_objects = {}
         self.topological_refinement = topological_refinement
         self.max_radius_bound = max_radius_bound
+        self.delays = delays
+        self.sequential_check = sequential_check
+        self.trajectories = trajectories
+        self.safety_distance = safety_distance
+        self.all_movable_objects = all_movable_objects
+        self.all_start_configs = all_start_configs
+        self.all_goal_configs = all_goal_configs
+        self.action_timings = action_timings
 
         self.d_max = []
         self.v_max = []
@@ -62,6 +80,10 @@ class CollisionChecker:
 
         self.index_map = index_map
         self.d_max = d_max
+
+    @property
+    def collision_objects(self) -> Dict[int, List[MovableObject]]:
+        return self._collision_objects
 
     def get_collision_objects(self) -> Set[MovableObject]:
         return self._collision_objects
@@ -85,16 +107,32 @@ class CollisionChecker3D(CollisionChecker):
         movable_obstacles: Dict[MovableObject, ConfigurationObject],
         topological_refinement: SupportedTopologicalRefinement,
         index_map: Dict[int, int],
+        delays: Optional[Dict[int, float]] = None,
+        sequential_check: Optional[bool] = None,
+        trajectories: Optional[Dict[int, list]] = None,
+        safety_distance: Optional[float] = None,
         d_max: Optional[List[float]] = None,
         max_radius_bound: Optional[bool] = False,
+        all_movable_objects: Optional[Dict[int, MovableObject]] = None,
+        all_start_configs: Optional[Dict[int, ConfigurationObject]] = None,
+        all_goal_configs: Optional[Dict[int, ConfigurationObject]] = None,
+        action_timings: Optional[Dict[int, Tuple[float, float]]] = None,
     ) -> None:
         super().__init__(
             moving_objects,
             map,
             topological_refinement,
             index_map,
-            d_max,
-            max_radius_bound,
+            delays=delays,
+            sequential_check=sequential_check,
+            trajectories=trajectories,
+            safety_distance=safety_distance,
+            d_max=d_max,
+            max_radius_bound=max_radius_bound,
+            all_movable_objects=all_movable_objects,
+            all_start_configs=all_start_configs,
+            all_goal_configs=all_goal_configs,
+            action_timings=action_timings,
         )
 
         self.env_mesh = ("env", map.mesh)
@@ -111,9 +149,9 @@ class CollisionChecker3D(CollisionChecker):
             moving_object = o
             start_pose = start_configs[k]
             self.start_poses[k] = (
-                start_pose.configuration[0],
-                start_pose.configuration[1],
-                start_pose.configuration[2],
+                start_pose.configuration.x,
+                start_pose.configuration.y,
+                start_pose.configuration.z,
             )
             self.moving_objects_meshes[k] = (
                 f"moving_object_{k}",
@@ -135,17 +173,17 @@ class CollisionChecker3D(CollisionChecker):
                     raise NotImplementedError(
                         f"Motion model {obj.motion_model} not yet supported."
                     )
-                # Assumption for SE3: (x, y, z, rw, rx, ry, rz)
+
                 T = transformations.translation_matrix(
-                    [transform[0], transform[1], transform[2]]
+                    [transform.x, transform.y, transform.z]
                 )
-                rotation = (transform[3], transform[4], transform[5], transform[6])
+                rotation = (transform.rw, transform.rx, transform.ry, transform.rz)
                 if all(v == 0 for v in rotation):
                     R = transformations.quaternion_matrix([1, 0, 0, 0])
                 else:
-                    R = transformations.rotation_matrix(
-                        transform[6], [transform[3], transform[4], transform[5]]
-                    )
+
+                    R = transformations.quaternion_matrix(rotation)
+
                 tf = transformations.concatenate_matrices(T, R)
                 return trimesh.load(obj.geometric_model, force="mesh").apply_transform(
                     tf
@@ -167,9 +205,12 @@ class CollisionChecker3D(CollisionChecker):
 
         collision = False
 
-        for k, o in self.moving_objects.items():
-            subspace_index = self.index_map[k]
-            state = state[subspace_index]
+        for k, _ in self.moving_objects.items():
+
+            if len(self.index_map) > 1:
+                subspace_index = self.index_map[k]
+                state = state[subspace_index]
+
             T = transformations.translation_matrix(
                 [state.getX(), state.getY(), state.getZ()]
             )
@@ -184,8 +225,9 @@ class CollisionChecker3D(CollisionChecker):
             tf = transformations.concatenate_matrices(T, R)
 
             colliding, collision_objs = self.collision_manager.in_collision_single(
-                self.moving_objects_meshs[k][1], tf, return_names=True
+                self.moving_objects_meshes[k][1], tf, return_names=True
             )
+
             collision = collision or colliding
 
             if (
@@ -202,33 +244,26 @@ class CollisionChecker3D(CollisionChecker):
 
         return not collision
 
-    def plot_current_state(
-        self,
-        starts: Dict[int, ConfigurationObject],
-        goals: Dict[int, ConfigurationObject],
-    ):
-        from mayavi import mlab
+    def plot_current_state(self, starts, goals):
+
+        import pyvista as pv
+
+        plotter = pv.Plotter()
 
         # plot map
         env_vertices = self.env_mesh[1].vertices
-        env_indices = self.env_mesh[1].faces
+        env_faces = self.env_mesh[1].faces
+        faces = np.hstack((np.full((env_faces.shape[0], 1), 3), env_faces))
 
-        mlab.figure()
-        mlab.triangular_mesh(
-            env_vertices[:, 0],
-            env_vertices[:, 1],
-            env_vertices[:, 2],
-            env_indices,
-            opacity=1.0,
-            color=(0.5, 0.5, 0.5),
-        )
+        mesh = pv.PolyData(env_vertices, faces)
+        plotter.add_mesh(mesh, color="lightgrey", opacity=1.0)
 
         for k, _ in self.moving_objects.items():
             # plot moving object at its start and goal configuration
             obj_color = tuple(np.random.uniform(range(0, 1), size=3))
 
-            # obj at start - Assumption for SE3: (x, y, z, rx, ry, rz, rangle)
-            obj_at_start = self.moving_objects_meshes[k][1].copy()
+            # Start configuration
+            obj_start = self.moving_objects_meshes[k][1].copy()
             T = transformations.translation_matrix(
                 [
                     starts[k].configuration.x,
@@ -237,36 +272,29 @@ class CollisionChecker3D(CollisionChecker):
                 ]
             )
             rotation = (
+                starts[k].configuration.rw,
                 starts[k].configuration.rx,
                 starts[k].configuration.ry,
                 starts[k].configuration.rz,
-                starts[k].configuration.rw,
             )
             if all(v == 0 for v in rotation):
                 R = transformations.quaternion_matrix([1, 0, 0, 0])
             else:
-                R = transformations.rotation_matrix(
-                    starts[k].configuration.rw,
-                    [
-                        starts[k].configuration.rx,
-                        starts[k].configuration.ry,
-                        starts[k].configuration.rz,
-                    ],
-                )
+                R = transformations.quaternion_matrix(rotation)
             tf = transformations.concatenate_matrices(T, R)
-            obj_at_start.apply_transform(tf)
+            obj_start.apply_transform(tf)
 
-            mlab.triangular_mesh(
-                obj_at_start.vertices[:, 0],
-                obj_at_start.vertices[:, 1],
-                obj_at_start.vertices[:, 2],
-                obj_at_start.faces,
-                opacity=1.0,
+            start_faces = np.hstack(
+                (np.full((obj_start.faces.shape[0], 1), 3), obj_start.faces)
+            )
+            plotter.add_mesh(
+                pv.PolyData(obj_start.vertices, start_faces),
                 color=obj_color,
+                opacity=1.0,
             )
 
-            # obj at goal - Assumption for SE3: (x, y, z, rx, ry, rz, rangle)
-            obj_at_goal = self.moving_object_mesh[1].copy()
+            # Goal configuration
+            obj_goal = self.moving_objects_meshes[k][1].copy()
             T = transformations.translation_matrix(
                 [
                     goals[k].configuration.x,
@@ -275,48 +303,36 @@ class CollisionChecker3D(CollisionChecker):
                 ]
             )
             rotation = (
+                goals[k].configuration.rw,
                 goals[k].configuration.rx,
                 goals[k].configuration.ry,
                 goals[k].configuration.rz,
-                goals[k].configuration.rw,
             )
             if all(v == 0 for v in rotation):
                 R = transformations.quaternion_matrix([1, 0, 0, 0])
             else:
-                R = transformations.rotation_matrix(
-                    goals[k].configuration.rw,
-                    [
-                        goals[k].configuration.rx,
-                        goals[k].configuration.ry,
-                        goals[k].configuration.rz,
-                    ],
-                )
+                R = transformations.quaternion_matrix(rotation)
             tf = transformations.concatenate_matrices(T, R)
-            obj_at_goal.apply_transform(tf)
-
-            mlab.triangular_mesh(
-                obj_at_goal.vertices[:, 0],
-                obj_at_goal.vertices[:, 1],
-                obj_at_goal.vertices[:, 2],
-                obj_at_goal.faces,
-                opacity=1.0,
-                color=obj_color,
+            obj_goal.apply_transform(tf)
+            goal_faces = np.hstack(
+                (np.full((obj_goal.faces.shape[0], 1), 3), obj_goal.faces)
+            )
+            plotter.add_mesh(
+                pv.PolyData(obj_goal.vertices, goal_faces), color=obj_color, opacity=1.0
             )
 
-        # plot movable obstacles at their current configuration
-        obs_color = tuple(np.random.uniform(range(0, 1), size=3))
-
+        # Plot movable obstacles
         for _, obs_mesh in self.movable_obstacles_meshes:
-            mlab.triangular_mesh(
-                obs_mesh.vertices[:, 0],
-                obs_mesh.vertices[:, 1],
-                obs_mesh.vertices[:, 2],
-                obs_mesh.faces,
-                opacity=1.0,
-                color=obs_color,
+            obs_color = np.random.rand(3)
+
+            obs_faces = np.hstack(
+                (np.full((obs_mesh.faces.shape[0], 1), 3), obs_mesh.faces)
+            )
+            plotter.add_mesh(
+                pv.PolyData(obs_mesh.vertices, obs_faces), color=obs_color, opacity=1.0
             )
 
-        mlab.show()
+        plotter.show()
 
 
 class CollisionChecker2D(CollisionChecker):
@@ -329,18 +345,35 @@ class CollisionChecker2D(CollisionChecker):
         movable_obstacles: Dict[MovableObject, ConfigurationObject],
         topological_refinement: SupportedTopologicalRefinement,
         index_map: Dict[int, int],
+        delays: Optional[Dict[int, float]] = None,
+        sequential_check: Optional[bool] = None,
+        trajectories: Optional[Dict[int, list]] = None,
+        safety_distance: Optional[float] = None,
         d_max: Optional[List[float]] = None,
         max_radius_bound: Optional[bool] = False,
+        all_movable_objects: Optional[Dict[int, MovableObject]] = None,
+        all_start_configs: Optional[Dict[int, ConfigurationObject]] = None,
+        all_goal_configs: Optional[Dict[int, ConfigurationObject]] = None,
+        action_timings: Optional[Dict[int, Tuple[float, float]]] = None,
     ) -> None:
         super().__init__(
             moving_objects,
             map,
             topological_refinement,
             index_map,
-            d_max,
-            max_radius_bound,
+            delays=delays,
+            sequential_check=sequential_check,
+            trajectories=trajectories,
+            safety_distance=safety_distance,
+            d_max=d_max,
+            max_radius_bound=max_radius_bound,
+            all_movable_objects=all_movable_objects,
+            all_start_configs=all_start_configs,
+            all_goal_configs=all_goal_configs,
+            action_timings=action_timings,
         )
 
+        self.start_configs = start_configs
         self.start_poses = {}
         self.objects_vertices = {}
 
@@ -397,12 +430,12 @@ class CollisionChecker2D(CollisionChecker):
 
         return fix_obstacles
 
-    def get_polygon_from_state(self, state: ob.State, k: int, n_robots: int) -> Polygon:
+    def get_polygon_from_state(self, state: ob.State, k: int) -> Polygon:
 
         obj_state = state
         if self.is_time_space:
             obj_state = state[0]
-        if n_robots > 1:
+        if len(self.moving_objects) > 1:
             key = self.index_map[k]
             obj_state = obj_state[key]
         x = obj_state.getX()
@@ -449,9 +482,33 @@ class CollisionChecker2D(CollisionChecker):
         if not si.satisfiesBounds(state):
             return False
 
+        current_time = None
         if self.is_time_space:
-            if si.getStateSpace().getStateTime(state) < 0:
+            current_time = si.getStateSpace().getStateTime(state)
+            if current_time < 0:
                 return False
+
+            # Sequential check: shift the sampled time by this robot's start offset
+            if self.delays and self.sequential_check:
+                current_time += list(self.delays.values())[0]
+            # Group MP: pin robots at their start position until their delay elapses
+            elif self.delays:
+                for i, t in self.delays.items():
+                    if t > 0 and current_time <= t + 0.1:
+                        x = self.start_configs[i].configuration.x / self.map.resolution
+                        y = (
+                            self.map.image.size[1]
+                            - self.start_configs[i].configuration.y / self.map.resolution
+                        )
+                        yaw = self.start_configs[i].configuration.theta
+                        if (
+                            len(self.moving_objects) == 1
+                            and self.all_movable_objects
+                            and len(self.all_movable_objects) > 1
+                        ):
+                            i = 0
+                        state[0][i].setXY(x, y)
+                        state[0][i].setYaw(yaw)
 
         # bounds based on action max duration
         if self.is_time_space is None or (
@@ -462,12 +519,17 @@ class CollisionChecker2D(CollisionChecker):
             )
 
         if self.max_radius_bound:
-            # Check if the distance is less than or equal to the radius
             for k, _ in self.moving_objects.items():
                 obj_state = state
                 if self.is_time_space:
                     obj_state = state[0]
-                if len(self.moving_objects.values()) > 1:
+                if (
+                    len(self.moving_objects) == 1
+                    and self.all_movable_objects
+                    and len(self.all_movable_objects) > 1
+                ):
+                    obj_state = obj_state[0]
+                elif len(self.moving_objects) > 1:
                     key = self.index_map[k]
                     obj_state = obj_state[key]
                 x = obj_state.getX()
@@ -480,44 +542,148 @@ class CollisionChecker2D(CollisionChecker):
                 if distance > self.d_max[k] * self.v_max[k]:
                     return False
 
-        # Find intersections with fix obstacles
+        # Build multi-motion-per-object time windows (only when time-space)
+        equal_objs = None
+        if self.is_time_space:
+            equal_objs = defaultdict(list)
+            for k, obj in self.moving_objects.items():
+                equal_objs[obj].append((k, self.delays.get(k, 0) if self.delays else 0, math.inf))
+            for obj in equal_objs:
+                equal_objs[obj].sort(key=lambda x: x[1])
+                for i in range(1, len(equal_objs[obj])):
+                    equal_objs[obj][i - 1] = (
+                        equal_objs[obj][i - 1][0],
+                        equal_objs[obj][i - 1][1],
+                        equal_objs[obj][i][1],
+                    )
 
-        collision_found = False
+        for k, obj in self.moving_objects.items():
 
-        for k, _ in self.moving_objects.items():
-            moving = self.get_polygon_from_state(
-                state, k, len(self.moving_objects)
-            )  # Get moving object current state
-            for fo in self.fixed_obstacles:
-                if moving.intersects(fo):
-                    collision_found = True
+            # Skip this robot if it is not active at current_time
+            if self.is_time_space and equal_objs is not None:
+                start_time, end_time = None, None
+                for obj_id, st, et in equal_objs[obj]:
+                    if k == obj_id:
+                        start_time, end_time = st, et
+                        break
+                if start_time is None:
+                    raise Exception("Unmatched moving object in equal_objs.")
+                if current_time < start_time or current_time > end_time:
+                    continue
 
-            # Find intersections with movable objects
+            # Get moving object's current polygon
+            if (
+                len(self.moving_objects) == 1
+                and self.all_movable_objects
+                and len(self.all_movable_objects) > 1
+            ):
+                moving = self.get_polygon_from_state(state, 0)
+            else:
+                moving = self.get_polygon_from_state(state, k)
+
+            # Check against movable obstacles at their fixed positions
             for kobs, v in self.movable_obstacles.items():
                 if moving.intersects(v):
-                    collision_found = True
                     if self.topological_refinement in [
                         SupportedTopologicalRefinement.ALL,
                         SupportedTopologicalRefinement.OBS,
                     ]:
                         self.add_collision_object((k, kobs))
+                    return False
 
-        return not collision_found
+            # Sequential check: collide against other robots that are stationary
+            if self.all_movable_objects and self.sequential_check:
+                l = {}
+                for k_all, v in self.all_movable_objects.items():
+                    start_t = self.action_timings[k_all][0]
+                    end_t = start_t + self.action_timings[k_all][1]
+                    l.setdefault(v, []).append(
+                        (start_t, end_t, self.all_start_configs[k_all], self.all_goal_configs[k_all])
+                    )
+
+                for v, times_configs in l.items():
+                    if v == obj:
+                        continue
+                    times_configs.sort(key=lambda x: x[0])
+                    t0 = 0
+                    last_config = None
+                    static_intervals = []
+                    for (start_t, end_t, start_cfg, goal_cfg) in times_configs:
+                        if last_config is not None:
+                            assert last_config == start_cfg
+                        static_intervals.append((t0, start_t, start_cfg))
+                        t0 = end_t
+                        last_config = goal_cfg
+                    static_intervals.append((t0, math.inf, last_config))
+
+                    for st, et, config in static_intervals:
+                        if st <= current_time <= et:
+                            other_static = self.get_polygon_from_config(v, config)
+                            if moving.intersects(other_static):
+                                return False
+                            break
+
+            # Sequential check: collide against pre-computed trajectories with safety margin
+            if self.is_time_space and self.sequential_check and self.trajectories:
+                time_margin = self.safety_distance / max(self.v_max[k] if k < len(self.v_max) else 1.0, 1e-6)
+                left = current_time - time_margin
+                right = current_time + time_margin
+
+                for oth_obj_id, oth_obj_traj in self.trajectories.items():
+                    times = [oth_obj_traj[0][5]]
+                    for idx in range(1, len(oth_obj_traj)):
+                        times.append(times[-1] + oth_obj_traj[idx][5])
+
+                    i1 = bisect.bisect_left(times, left)
+                    i2 = bisect.bisect_right(times, right)
+
+                    for state_to_check in oth_obj_traj[i1:i2]:
+                        sx, sy, syaw = state_to_check[0], state_to_check[1], state_to_check[2]
+                        pts = [(sx + dx, sy + dy) for (dx, dy) in self.objects_vertices[oth_obj_id]]
+                        poly_to_check = rotate(Polygon(pts), syaw, use_radians=True)
+                        if moving.intersects(poly_to_check):
+                            return False
+
+            # Group MP: check against other moving robots in the same group
+            if not self.sequential_check:
+                for other_k, other_obj in self.moving_objects.items():
+                    if other_obj == obj:
+                        continue
+                    if self.is_time_space and equal_objs is not None:
+                        other_active = False
+                        for obj_id, st, et in equal_objs[other_obj]:
+                            if other_k == obj_id and st <= current_time <= et:
+                                other_active = True
+                                break
+                        if not other_active:
+                            continue
+                    other_moving = self.get_polygon_from_state(state, other_k)
+                    if moving.intersects(other_moving):
+                        return False
+
+            # Check against fixed obstacles
+            for fo in self.fixed_obstacles:
+                if moving.intersects(fo):
+                    return False
+
+        return True
 
     def plot_current_state(
         self,
         start_configs: Dict[int, ConfigurationObject],
         goal_configs: Dict[int, ConfigurationObject],
     ):
-        from descartes import PolygonPatch
         from matplotlib import pyplot as plt
+        from matplotlib.patches import Polygon as MplPolygon
 
         _, ax = plt.subplots()
 
         ax.imshow(self.map.image)
 
         for obs in self.fixed_obstacles:
-            ax.add_patch(PolygonPatch(obs, alpha=0))
+            ax.add_patch(
+                MplPolygon(list(obs.exterior.coords), color="black", alpha=0.3)
+            )
 
         if len(start_configs) != len(goal_configs):
             raise ValueError(
@@ -528,12 +694,14 @@ class CollisionChecker2D(CollisionChecker):
             start = self.get_polygon_from_config(
                 self.moving_objects[i], start_configs[i]
             )
-            ax.add_patch(PolygonPatch(start, alpha=0.1))
+            ax.add_patch(
+                MplPolygon(list(start.exterior.coords), color="green", alpha=0.3)
+            )
 
             goal = self.get_polygon_from_config(self.moving_objects[i], goal_configs[i])
-            ax.add_patch(PolygonPatch(goal, alpha=0.1))
+            ax.add_patch(MplPolygon(list(goal.exterior.coords), color="red", alpha=0.3))
 
         for _, v in self.movable_obstacles.items():
-            ax.add_patch(PolygonPatch(v, alpha=1.0))
+            ax.add_patch(MplPolygon(list(v.exterior.coords), color="blue", alpha=0.3))
 
         plt.show()

@@ -1,0 +1,13 @@
+*~
+__pycache__
+
+# Cache di istanze rigenerata deterministicamente dai benchmarks/*/generator.py
+benchmarks/*/configs/2D/locations/
+benchmarks/*/configs/2D/maps/[0-9]*.png
+benchmarks/*/configs/2D/maps/[0-9]*.yaml
+
+# Mappe-template che hanno nome numerico (input, non cache): vanno tenute
+!benchmarks/driverlog/configs/2D/maps/1.png
+!benchmarks/driverlog/configs/2D/maps/1.yaml
+!benchmarks/majsp/configs/2D/maps/1.png
+!benchmarks/majsp/configs/2D/maps/1.yaml

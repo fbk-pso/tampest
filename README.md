@@ -1,50 +1,58 @@
 # TAMPEST
 
-**TAMPEST** (Task and Motion Planning by Encoding into Satisfiability Testing) is a meta-framework for solving complex Task and Motion Planning (TAMP) problems. TAMP problems combine discrete task planning with low-level continuous motion planning and are fundamental for robotic autonomy in dynamic and partially known environments.
+**TAMPEST** (Task and Motion Planning by Encoding into Satisfiability Testing) is a meta-framework for solving complex Task and Motion Planning (TAMP) problems, which combine discrete task planning with low-level continuous motion planning and are fundamental for robotic autonomy in dynamic and partially known environments.
 
-TAMPEST introduces a general open-source framework for modeling, solving, and benchmarking TAMP problems. It includes a specialization for **incremental SMT-based planning** via [TemPEST](https://github.com/fbk-pso/tempest), a temporal planner that serves as one of the back-end engines.
+TAMPEST provides a general open-source framework for modeling, solving, and benchmarking TAMP problems. It supports **classical, numeric, and temporal** task and motion planning, as well as **scheduling + motion planning**. It is built on top of the [Unified Planning](https://github.com/aiplan4eu/unified-planning) framework and includes a specialization for **incremental SMT-based planning** via [TemPEST](https://github.com/fbk-pso/tempest), a temporal planner that serves as one of the back-end engines.
 
-## Requirements
 
-The first requirement is Python3 since the framework is written in python:
+## Installation
+
+Install the system dependencies:
 ```bash
 apt-get install python3-dev python3-pip
 ```
 
-For the motion planning part [OMPL](https://ompl.kavrakilab.org/) is needed:
+Install [Unified Planning](https://github.com/aiplan4eu/unified-planning), the framework TAMPEST builds on to model problems and register its engines:
 ```bash
-wget https://ompl.kavrakilab.org/install-ompl-ubuntu.sh
-chmod u+x install-ompl-ubuntu.sh
-./install-ompl-ubuntu.sh --python
+pip3 install --pre unified-planning
 ```
 
-Other Python requirements:
+Install TAMPEST itself, which pulls in the core dependencies (including [OMPL](https://ompl.kavrakilab.org/), [TemPEST](https://github.com/fbk-pso/tempest), and [PySMT](https://github.com/pysmt/pysmt)):
 ```bash
-pip3 install -r requirements.txt
+pip3 install "tampest @ git+https://github.com/fbk-pso/tampest.git"
 ```
 
-TAMPEST relies on [TemPEST](https://github.com/fbk-pso/tempest) for the SMT-based task planning capabilities.
-
-```bash
-pip3 install git+https://github.com/fbk-pso/tempest.git
-```
-
-Solver dependencies for TemPEST (see [PySMT](https://github.com/pysmt/pysmt)):
+Install the SMT solver required by TemPEST:
 ```bash
 pysmt-install --z3
 ```
 
-One of the task planners that can be used for numeric planning is ENHSP. It requires JAVA:
+Optionally, install the visualization libraries (`matplotlib`, `scipy`, `pyvista`):
+```bash
+pip3 install "tampest[plot] @ git+https://github.com/fbk-pso/tampest.git"
+```
+
+### Optional: task planners for meta-engines
+
+`TampMetaEngine` can wrap any UP-compatible task planner. Install only the ones you need:
+```bash
+# fast-downward, ENHSP, or Tamer (as UP extras)
+pip3 install --pre unified-planning[fast-downward]
+pip3 install --pre unified-planning[enhsp]
+pip3 install --pre unified-planning[tamer]
+```
+
+ENHSP requires Java:
 ```bash
 apt-get install openjdk-17-jdk
 ```
 
-## Installation
-
-Install TAMPEST with `pip`:
-
+`SampMetaEngine` requires a scheduling engine. Install only the one you need:
 ```bash
-pip3 install git+https://github.com/fbk-pso/tampest.git
+# CPSE
+pip3 install git+https://github.com/fbk-pso/cpse.git
+# Aries
+pip3 install https://github.com/plaans/aries/releases/download/latest/up_aries.tar.gz
 ```
 
 ## Usage
@@ -58,6 +66,7 @@ from unified_planning.shortcuts import *
 env = get_environment()
 env.factory.add_engine("tampest", "tampest.engine", "TampestEngine")
 env.factory.add_meta_engine("tamp", "tampest.meta_engine", "TampMetaEngine")
+env.factory.add_meta_engine("samp", "tampest.meta_engine_samp", "SampMetaEngine")
 
 problem = ...  # your task and motion planning problem
 
@@ -70,20 +79,31 @@ with OneshotPlanner(name="tampest") as planner:
 with OneshotPlanner(name="tamp[enhsp]") as planner:
     result = planner.solve(problem)
     print(result.plan)
+
+# Solve a SchedulingMotionProblem with the SAMP meta engine
+# (wraps any UP-compatible scheduling engine, e.g. CPSE or aries)
+with OneshotPlanner(name="samp[cpse]") as planner:
+    result = planner.solve(problem)
+    print(result.plan)
 ```
 
-## References
+## Reproducing Results
 
-- E. Tosello, A. Valentini, A. Micheli. *A Meta-Engine Framework for Interleaved Task and Motion Planning using Topological Refinements.* **ECAI 2024**
+The paper experiments are driven by `run.py` and the problem definitions under `benchmarks/`, which live in the repository. Clone it first:
 
-- E. Tosello, A. Valentini, A. Micheli. *Temporal Task and Motion Planning with Metric Time for Multiple Object Navigation.* **AAAI 2025**
+```bash
+git clone https://github.com/fbk-pso/tampest.git
+cd tampest
+```
 
-## Reproducing Results from ECAI 2024
+If you did not install TAMPEST with `pip` (see [Installation](#installation)), you can instead install the dependencies from the clone with `pip3 install -r requirements.txt`. For the meta-engine experiments, also install the task or scheduling planner required by the target paper (see [Optional: task planners for meta-engines](#optional-task-planners-for-meta-engines)).
+
+### ECAI 2024
 
 To reproduce the experimental results from the ECAI 2024 paper, use the following command-line interface:
 
 ```bash
-python3 test.py --domain <domain-name> --tr <topological-refinement> --tp <task-planner-name> --mp <motion-planner> --dim <dim> --d <n> --c <m> [--capacity <robot_capacity>]
+python3 run.py --domain <domain-name> --tr <topological-refinement> --tp <task-planner-name> --mp <motion-planner> --dim <dim> --d <n> --c <m> [--capacity <robot_capacity>]
 ```
 
 The possible domains are: `doors`, `maze`, `delivery`, `rover`.
@@ -110,12 +130,12 @@ The possible set of benchmark options are:
 
 See [here](https://github.com/fbk-pso/up-pddl-stream/) to reproduce the results related to `up-pddl-stream`.
 
-## Reproducing Results from AAAI 2025
+### AAAI 2025
 
 To reproduce the experimental results from the AAAI 2025 paper, use the following command-line interface:
 
 ```bash
-python3 test.py --domain <domain-name> --tr <topological-refinement> --r <r> --d <n> [--c <m>] [--n_pallets <n_pallets>] [--kit_size <kit_size> --n_kit <n_kit>] [--n_drivers <n_drivers>] [--n_tiles <n_tiles> --n_colors <n_colors>]
+python3 run.py --domain <domain-name> --tr <topological-refinement> --r <r> --d <n> [--c <m>] [--n_pallets <n_pallets>] [--kit_size <kit_size> --n_kit <n_kit>] [--n_drivers <n_drivers>] [--n_tiles <n_tiles> --n_colors <n_colors>]
 ```
 
 The possible domains are: `tdoors`, `majsp`, `kitting`, `driverlog`, `floortile`.
@@ -136,9 +156,42 @@ The possible set of benchmark options are:
 
 *Refer to the paper for the detailed meaning of the domain parameters.*
 
+### ICAPS 2026
+
+The ICAPS 2026 paper adds a scheduling+motion-planning pipeline on top of TAMPEST, exposed via the `SampMetaEngine`. It wraps a UP-compatible scheduling engine and interleaves it with the existing motion-planning stack.
+
+```bash
+python3 run.py --tp <TP> [--use_fluents] [--opt] --domain <DOMAIN> \
+    [--d <D>] [--r <R>] [--n_pallets <N_PALLETS>] \
+    [--n_components <N_COMPONENTS>] [--use_external_locations]
+```
+
+The possible task planners are: `samp[aries]`, `samp[aries-opt]`, `samp[cpse]`.
+
+The possible domains are:
+
+* `jsp` (Job Shop Problem): `--r [1 2 3] --d [1 2 4 6] --n_pallets [1 2 3]`, with *r* the number of robots, *d* the number of machines closed by a door, and *n_pallets* the number of pallets to treat.
+
+* `logistics`: `--r [1 2 3] --d [0 1] --n_shelves [2] --n_components [1 2 3 4 5 6 7 8]`, with *r* the number of robots, *d* a flag for the presence of doors (0 = no doors, 1 = doors present), *n_shelves* the number of shelves and *n_components* the number of components to pick up. Pass `--use_external_locations` to give each shelf both internal and external locations.
+
+Additional options:
+
+* `--use_fluents`: enable fluent-based modeling of configuration occupancy.
+* `--opt`: enable makespan minimization (when supported by the selected scheduler).
+
+*Refer to the paper for the detailed meaning of the domain parameters.*
+
+## References
+
+- E. Tosello, A. Valentini, A. Micheli. *A Meta-Engine Framework for Interleaved Task and Motion Planning using Topological Refinements.* **ECAI 2024**
+
+- E. Tosello, A. Valentini, A. Micheli. *Temporal Task and Motion Planning with Metric Time for Multiple Object Navigation.* **AAAI 2025**
+
+- E. Tosello, A. Bit-Monnot, D. Lusuardi, A. Valentini, A. Micheli. *Interleaving Scheduling and Motion Planning with Incremental Learning of Symbolic Space-Time Motion Abstractions.* **ICAPS 2026**
+
 ## License
 
-TAMPEST is released under the GNU Lesser General Public License v3.0 (LGPL-3.0).
+TAMPEST is released under the GNU General Public License v3.0 (GPL-3.0).
 See the `LICENSE` file for full details.
 
 ## Contact

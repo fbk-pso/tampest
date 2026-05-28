@@ -1,37 +1,45 @@
-# Copyright (C) 2024-2025 PSO Unit, Fondazione Bruno Kessler
+# Copyright (C) 2024-2026 PSO Unit, Fondazione Bruno Kessler
 # This file is part of TAMPEST.
 #
 # TAMPEST is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published by
+# it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # TAMPEST is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU Lesser General Public License for more details.
+# GNU General Public License for more details.
 #
-# You should have received a copy of the GNU Lesser General Public License
+# You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 
 from functools import partial
+from collections import deque
+from itertools import combinations
 import alphashape
 from shapely import Point
 from shapely.geometry import Polygon
 from ompl import base as ob
 from ompl import geometric as og
 from ompl import control as oc
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 import numpy as np
 import time
 from shapely.affinity import *
-from tampest.motion.map import Map
+
+try:
+    import cv2 as _cv2
+except ImportError:
+    _cv2 = None
+from tampest.motion.map import Map, Map2D
 from tampest.motion.collision_checker import (
     CollisionChecker,
     CollisionChecker3D,
     CollisionChecker2D,
 )
+from tampest.motion.motion_sampler import StartAwareSampler
 from tampest.motion.motion_validator import SpaceTimeMotionValidator
 from unified_planning.shortcuts import *
 from tampest.motion.motion_planning_data import (
@@ -39,6 +47,17 @@ from tampest.motion.motion_planning_data import (
     SupportedPlanner,
     SupportedTopologicalRefinement,
 )
+
+
+def make_sampler_allocator(
+    start_timings: Dict[int, float],
+    start_configs: Dict[int, ConfigurationObject],
+    map: Map2D,
+) -> Callable[[ob.StateSpace], ob.StateSampler]:
+    def allocator(space: ob.StateSpace) -> ob.StateSampler:
+        return StartAwareSampler(space, start_timings, start_configs, map)
+
+    return allocator
 
 
 class MotionPlanner:
@@ -121,13 +140,13 @@ class MotionPlanner:
         self, map: Map, motion_model: MotionModels
     ) -> ob.RealVectorBounds:
         bounds = None
-        if motion_model == MotionModels.REEDSSHEPP or motion_model == MotionModels.SE2:
+        if motion_model in (MotionModels.REEDSSHEPP, MotionModels.SE2):
             bounds = ob.RealVectorBounds(2)
             bounds.setLow(0.0)
             bounds.high[0] = map.image.size[0]
             bounds.high[1] = map.image.size[1]
 
-        if motion_model == MotionModels.SE3:
+        elif motion_model == MotionModels.SE3:
             env_bounds = map.mesh.bounds.T
             bounds = ob.RealVectorBounds(3)
             bounds.low[0] = env_bounds[0][0]
@@ -136,6 +155,9 @@ class MotionPlanner:
             bounds.high[0] = env_bounds[0][1]
             bounds.high[1] = env_bounds[1][1]
             bounds.high[2] = env_bounds[2][1]
+
+        else:
+            raise NotImplementedError(f"Bounds for {motion_model} not found.")
 
         # print(f"map bounds: bounds.low: {bounds.low[0]}, {bounds.low[1]}")
         # print(f"map bounds: bounds.high: {bounds.high[0]}, {bounds.high[1]}")
@@ -152,53 +174,49 @@ class MotionPlanner:
 
         # set the planner
         if planner == SupportedPlanner.RRT:
-            if control_model is not None and not is_state_space:
-                selected_planner = oc.RRT(si)
             selected_planner = og.RRT(si)
         elif planner == SupportedPlanner.STRRTstar:
             if control_model is not None and not is_state_space:
-                raise ("STRRTstar not available for ompl control")
+                raise Exception("STRRTstar not available for ompl control")
             if is_state_space:
                 strrt = og.STRRTstar(si)
                 selected_planner = strrt
                 # selected_planner.setOptimumApproxFactor(0.001)
             else:
-                raise ("STRRTstar not available without v_max")
+                raise Exception("STRRTstar not available without v_max")
         elif planner == SupportedPlanner.LazyRRT:
             if control_model is not None and not is_state_space:
-                raise ("LazyRRT not available for ompl control")
+                raise Exception("LazyRRT not available for ompl control")
             selected_planner = og.LazyRRT(si)
         elif planner == SupportedPlanner.RRTConnect:
             if control_model is not None and not is_state_space:
-                raise ("RRTConnect not available for ompl control")
+                raise Exception("RRTConnect not available for ompl control")
             selected_planner = og.RRTConnect(si)
         elif planner == SupportedPlanner.RRTstar:
             if control_model is not None and not is_state_space:
-                raise ("RRTstar not available for ompl control")
+                raise Exception("RRTstar not available for ompl control")
             selected_planner = og.RRTstar(si)
         elif planner == SupportedPlanner.KPIECE1:
             if control_model is not None:
                 if is_state_space:
                     selected_planner = oc.KPIECE1(si)
                 else:
-                    raise ("KPIECE1 not available for space time state space")
+                    raise Exception("KPIECE1 not available for space time state space")
             else:
                 selected_planner = og.KPIECE1(si)
         elif planner == SupportedPlanner.PRM:
             if control_model is not None:
-                raise ("PRM not available for ompl control")
+                raise Exception("PRM not available for ompl control")
             selected_planner = og.PRM(si)
         elif planner == SupportedPlanner.LazyPRM:
             if control_model is not None:
-                raise ("LazyPRM not available for ompl control")
+                raise Exception("LazyPRM not available for ompl control")
             selected_planner = og.LazyPRM(si)
         elif planner == SupportedPlanner.EST:
-            if control_model is not None and not is_state_space:
-                selected_planner = oc.EST(si)
             selected_planner = og.EST(si)
         elif planner == SupportedPlanner.SBL:
             if control_model is not None:
-                raise ("SBL not available for ompl control")
+                raise Exception("SBL not available for ompl control")
             selected_planner = og.SBL(si)
 
         return selected_planner
@@ -234,6 +252,7 @@ class MotionPlanner:
         action_starts: Optional[Dict[int, float]] = None,
         d_max: Optional[Dict[int, float]] = None,
         distance: Optional[float] = None,
+        sequential_check: Optional[bool] = True,
     ) -> og.SimpleSetup:
 
         # set state space space
@@ -241,7 +260,7 @@ class MotionPlanner:
         motion_model = self.get_motion_model(moving_objects.values())
 
         if motion_model is None:
-            raise ("Missing motion model. Unable to set up state space.")
+            raise Exception("Missing motion model. Unable to set up state space.")
 
         control_model = self.get_control_model(moving_objects.values())
 
@@ -295,13 +314,16 @@ class MotionPlanner:
                 motion_setup.getSpaceInformation().setMotionValidator(
                     SpaceTimeMotionValidator(
                         motion_setup.getSpaceInformation(),
+                        map,
                         list(moving_objects.values()),
                         action_starts,
+                        start_configs,
+                        sequential_check,
                     )
                 )
 
             else:
-                raise NotImplementedError("Pure control setup not implemented.")
+                motion_setup = og.SimpleSetup(space)
 
         elif motion_model in {
             MotionModels.REEDSSHEPP,
@@ -327,17 +349,26 @@ class MotionPlanner:
         motion_setup.setPlanner(selected_planner)
 
         # set state validity checker for this space
-        motion_setup.setStateValidityChecker(
-            ob.StateValidityCheckerFn(
-                partial(cc.isStateValid, motion_setup.getSpaceInformation())
+        if motion_model in {MotionModels.REEDSSHEPP, MotionModels.SE2}:
+            motion_setup.setStateValidityChecker(
+                ob.StateValidityCheckerFn(
+                    partial(cc.isStateValid, motion_setup.getSpaceInformation())
+                )
             )
-        )
+        elif motion_model == MotionModels.SE3:
+            motion_setup.setStateValidityChecker(
+                ob.StateValidityCheckerFn(partial(cc.isStateValid))
+            )
+        else:
+            NotImplementedError
 
         if motion_model in {MotionModels.REEDSSHEPP, MotionModels.SE2}:
             motion_setup.getSpaceInformation().setStateValidityCheckingResolution(0.01)
 
-        if motion_model == MotionModels.SE3:
+        elif motion_model == MotionModels.SE3:
             motion_setup.getSpaceInformation().setStateValidityCheckingResolution(0.05)
+        else:
+            NotImplementedError
 
         # start and goal configurations
         ss = ob.State(motion_setup.getStateSpace())
@@ -388,8 +419,7 @@ class MotionPlanner:
                     rot=goal_configs[0].configuration.theta,
                 )
 
-        # Assumption for SE3: (x, y, z, rw, rx, ry, rz)
-        if motion_model == MotionModels.SE3:
+        elif motion_model == MotionModels.SE3:
             if len(moving_objects) > 1:
                 for k, _ in moving_objects.items():
                     i = state_space_map[k]
@@ -397,24 +427,25 @@ class MotionPlanner:
                         start[i],
                         x=start_configs[k].configuration.x,
                         y=start_configs[k].configuration.y,
-                        z=start_configs[k].configuration.theta,
+                        z=start_configs[k].configuration.z,
                         rot=(
-                            start_configs[k].configuration[3],
-                            start_configs[k].configuration[4],
-                            start_configs[k].configuration[5],
-                            start_configs[k].configuration[6],
+                            start_configs[k].configuration.rw,
+                            start_configs[k].configuration.rx,
+                            start_configs[k].configuration.ry,
+                            start_configs[k].configuration.rz,
                         ),
+                        is_se3=True,
                     )
                     self.set_config(
                         goal[i],
                         x=goal_configs[k].configuration.x,
                         y=goal_configs[k].configuration.y,
-                        z=goal_configs[k].configuration.theta,
+                        z=goal_configs[k].configuration.z,
                         rot=(
-                            goal_configs[k].configuration[3],
-                            goal_configs[k].configuration[4],
-                            goal_configs[k].configuration[5],
-                            goal_configs[k].configuration[6],
+                            goal_configs[k].configuration.rw,
+                            goal_configs[k].configuration.rx,
+                            goal_configs[k].configuration.ry,
+                            goal_configs[k].configuration.rz,
                         ),
                         is_se3=True,
                     )
@@ -424,27 +455,30 @@ class MotionPlanner:
                     start,
                     x=start_configs[0].configuration.x,
                     y=start_configs[0].configuration.y,
-                    z=start_configs[0].configuration.theta,
+                    z=start_configs[0].configuration.z,
                     rot=(
-                        start_configs[0].configuration[3],
-                        start_configs[0].configuration[4],
-                        start_configs[0].configuration[5],
-                        start_configs[0].configuration[6],
+                        start_configs[0].configuration.rw,
+                        start_configs[0].configuration.rx,
+                        start_configs[0].configuration.ry,
+                        start_configs[0].configuration.rz,
                     ),
+                    is_se3=True,
                 )
                 self.set_config(
                     goal,
                     x=goal_configs[0].configuration.x,
                     y=goal_configs[0].configuration.y,
-                    z=goal_configs[0].configuration.theta,
+                    z=goal_configs[0].configuration.z,
                     rot=(
-                        goal_configs[0].configuration[3],
-                        goal_configs[0].configuration[4],
-                        goal_configs[0].configuration[5],
-                        goal_configs[0].configuration[6],
+                        goal_configs[0].configuration.rw,
+                        goal_configs[0].configuration.rx,
+                        goal_configs[0].configuration.ry,
+                        goal_configs[0].configuration.rz,
                     ),
                     is_se3=True,
                 )
+        else:
+            NotImplementedError
 
         motion_setup.setStartAndGoalStates(ss, gs)
 
@@ -585,15 +619,117 @@ class MotionPlanner:
 
         return paths, {i: (v, durations[i]) for i, v in starts.items()}
 
-    def get_map(self, problem_objects):
-        map = None
+    def get_control_path(
+        self,
+        motion_setup: og.SimpleSetup,
+        solution_path,
+        is_time_space: bool,
+        action_starts: Dict[int, float],
+        start_configs: Dict[int, ConfigurationObject],
+        map: Map,
+        n_sub: int,
+        sequential_check: bool = False,
+    ) -> Tuple[
+        Dict[int, Tuple[float, float, float, float, float, float]],
+        Dict[int, Tuple[float, float]],
+    ]:
+        """Extract control paths from a time-space solution.
+
+        Superset of get_control_path_from_time_space_solution — also handles the
+        sequential_check mode where time is relative to each robot's start offset.
+        """
+
+        def _get_state_xy_yaw(state, sub_idx):
+            s = state[0] if is_time_space else state
+            if n_sub > 1:
+                s = s[sub_idx]
+            return s.getX(), s.getY(), s.getYaw()
+
+        def _get_config_xy_yaw(cfg):
+            x = cfg.configuration.x / map.resolution
+            y = map.image.size[1] - cfg.configuration.y / map.resolution
+            theta = cfg.configuration.theta
+            return x, y, theta
+
+        paths = {}
+        starts = {}
+        durations = {}
+        states = solution_path.getStates()
+
+        for i in range(n_sub):
+            started = False
+            starts[i] = 0.0
+            durations[i] = 0.0
+
+            x0, y0, yaw0 = _get_state_xy_yaw(states[0], i)
+            paths[i] = [(x0, y0, yaw0, 0, 0, 0)]
+            if sequential_check:
+                paths[i].append((x0, y0, yaw0, 0, 0, action_starts[i]))
+
+            tmp_dt = 0
+
+            for j in range(1, solution_path.getStateCount()):
+
+                t0 = motion_setup.getStateSpace().getStateTime(states[j - 1])
+                t1 = motion_setup.getStateSpace().getStateTime(states[j])
+
+                if sequential_check:
+                    x0, y0, yaw0 = _get_state_xy_yaw(states[j - 1], i)
+                    x1, y1, yaw1 = _get_state_xy_yaw(states[j], i)
+                else:
+                    if is_time_space and t0 > 0 and t0 <= action_starts[i] + 0.1:
+                        x0, y0, yaw0 = _get_config_xy_yaw(start_configs[i])
+                    else:
+                        x0, y0, yaw0 = _get_state_xy_yaw(states[j - 1], i)
+
+                    if is_time_space and t1 > 0 and t1 <= action_starts[i] + 0.1:
+                        x1, y1, yaw1 = _get_config_xy_yaw(start_configs[i])
+                    else:
+                        x1, y1, yaw1 = _get_state_xy_yaw(states[j], i)
+
+                dt = t1 - t0
+                dx = x1 - x0
+                dy = y1 - y0
+                dyaw = yaw1 - yaw0
+
+                v_x = dx / dt
+                v_y = dy / dt
+                v = np.sqrt(v_x**2 + v_y**2)
+                omega = dyaw / dt
+
+                if abs(dx) > 0.00001 or abs(dy) > 0.00001 or abs(dyaw) > 0.00001:
+                    if not started:
+                        if sequential_check:
+                            starts[i] = action_starts[i] + t0
+                        else:
+                            starts[i] = t0
+                    started = True
+                    durations[i] += tmp_dt + dt
+                    tmp_dt = 0
+                elif started:
+                    tmp_dt += dt
+
+                paths[i].append((x1, y1, yaw1, v, omega, dt))
+
+        return paths, {i: (v, durations[i]) for i, v in starts.items()}
+
+    def get_map(self, problem_objects: List[Object]):
+        map_filename = None
 
         for o in problem_objects:
             if o.type.is_configuration_type():
-                if map is None:
-                    map = Map().get_from_file(o.type.occupancy_map.filename)
-                    break
-        return map
+                filename = o.type.occupancy_map.filename
+                if map_filename is None:
+                    map_filename = filename
+                else:
+                    assert (
+                        filename == map_filename
+                    ), f"Inconsistent occupancy maps: '{filename}' != '{map_filename}'"
+        assert (
+            map_filename is not None
+        ), "No configuration-type object with a valid occupancy map found."
+
+        return Map.get_from_file(map_filename)
 
     # motion_constraints = {mc: (action_start, d_max, movable.object(), starting.object(), waypoint.object(), fixed_obstacles_pos)}
     # constraints_map = {(ai, mc): 0} ------------ used to assigned an id (name) to each motion planning problem
@@ -616,55 +752,67 @@ class MotionPlanner:
         planning_time: Optional[float] = 1.0,
         interpolate: Optional[bool] = True,
         simplified: Optional[bool] = True,
-        tolerance: Optional[float] = 0.0,
         distance: Optional[float] = None,
         motion_planner: Optional[SupportedPlanner] = SupportedPlanner.RRT,
         topological_refinement: Optional[
             SupportedTopologicalRefinement
         ] = SupportedTopologicalRefinement.ALL,
         max_radius_bound: Optional[bool] = False,
+        force_sequential_MP_check: Optional[bool] = False,
+        hull_enabled: Optional[bool] = False,
+        safety_distance: Optional[float] = None,
     ):
 
         action_starts = {}
+        action_durations = {}
         moving_objs = {}
         start_configs = {}
         goal_configs = {}
         d_max = {}
         obstacles = {}
 
-        # (0 action_start, 1 d_max, 2 movable.object(), 3 starting.object(), 4 waypoint.object(), 5 fixed_obstacles_pos)
+        # (0 action_start, 1 activity_duration, 2 d_max, 3 movable, 4 starting, 5 waypoint, 6 obstacles)
         for (ai, mc), value in motion_constraints.items():
             k = constraints_map[(ai, mc)]
             action_starts[k] = value[0]
-            d_max[k] = value[1]
-            moving_objs[k] = value[2]
-            start_configs[k] = value[3]
-            goal_configs[k] = value[4]
-            obstacles.update(value[5])
+            action_durations[k] = value[1]
+            d_max[k] = value[2]
+            moving_objs[k] = value[3]
+            start_configs[k] = value[4]
+            goal_configs[k] = value[5]
+            obstacles.update(value[6])
+
+        check_fn = self.sequential_check_motion_constraint if force_sequential_MP_check else self.check_motion_constraint
+
+        extra_kwargs = {"safety_distance": safety_distance} if force_sequential_MP_check else {}
 
         (
             is_valid,
+            is_temporal_valid,
             paths,
             durations,
+            _reachable_configurations,
             unreachable_configurations,
             collision_obstacles,
             planning_data,
-        ) = self.check_motion_constraint(
+        ) = check_fn(
             moving_objects=moving_objs,
             action_starts=action_starts,
+            action_durations=action_durations,
             start_configs=start_configs,
             goal_configs=goal_configs,
             obstacles=obstacles,
             problem_objects=problem_objects,
             d_max=d_max,
+            hull_enabled=hull_enabled,
             planning_time=planning_time,
             interpolate=interpolate,
             simplified=simplified,
-            tolerance=tolerance,
             distance=distance,
             motion_planner=motion_planner,
             topological_refinement=topological_refinement,
             max_radius_bound=max_radius_bound,
+            **extra_kwargs,
         )
 
         remapped_paths = {}
@@ -692,6 +840,7 @@ class MotionPlanner:
 
         return (
             is_valid,
+            is_temporal_valid,
             remapped_paths,
             remapped_durations,
             remapped_unreach,
@@ -708,11 +857,12 @@ class MotionPlanner:
         problem_objects,
         *,
         action_starts: Optional[Dict[int, float]] = None,
+        action_durations: Optional[Dict[int, float]] = None,
         d_max: Optional[Dict[int, float]] = None,
+        hull_enabled: Optional[bool] = False,
         planning_time: Optional[float] = 1.0,
         interpolate: Optional[bool] = True,
         simplified: Optional[bool] = True,
-        tolerance: Optional[float] = 0.0,
         distance: Optional[float] = None,
         motion_planner: Optional[SupportedPlanner] = SupportedPlanner.RRT,
         topological_refinement: Optional[
@@ -721,10 +871,12 @@ class MotionPlanner:
         max_radius_bound: Optional[bool] = False,
     ) -> Tuple[
         bool,
-        Optional[float],
-        Optional[List[Tuple[float, ...]]],
-        Optional[List[ConfigurationObject]],
-        Optional[List[MovableObject]],
+        bool,
+        Optional[Dict[int, List[Tuple[float, ...]]]],
+        Optional[Dict[int, Tuple[float, float]]],
+        Optional[Dict[int, List[ConfigurationObject]]],
+        Optional[Dict[int, List[ConfigurationObject]]],
+        Optional[Dict[int, List[MovableObject]]],
         MotionPlanningData,
     ]:
 
@@ -750,6 +902,7 @@ class MotionPlanner:
                 moving_objects=moving_objects,
                 start_configs=start_configs,
                 index_map=state_space_map,
+                delays=action_starts,
                 d_max=list(d_max.values()) if d_max else None,
                 map=map,
                 movable_obstacles=obstacles,
@@ -759,8 +912,9 @@ class MotionPlanner:
         elif motion_model == MotionModels.SE3:
             cc = CollisionChecker3D(
                 moving_objects=moving_objects,
-                start_configs=start_configs.values,
+                start_configs=start_configs,
                 index_map=state_space_map,
+                delays=action_starts,
                 d_max=list(d_max.values()) if d_max else None,
                 map=map,
                 movable_obstacles=obstacles,
@@ -799,6 +953,7 @@ class MotionPlanner:
 
         unreachable_configurations = {}
         collision_obstacles = {}
+        reachable_configurations = {}
 
         paths = {}
         durations = {}
@@ -806,27 +961,33 @@ class MotionPlanner:
         remapped_paths = {}
         remapped_durations = {}
 
+        is_temporal_valid = True
         goal_reached = []
+        use_bfs = False
 
         if solution_path:
-            if control_model is not None and motion_model in {
+            if control_model is not None and is_state_space and motion_model in {
                 MotionModels.SE2,
                 MotionModels.REEDSSHEPP,
             }:
+                n = len(moving_objects)
+                _as = {i: (action_starts[state_space_map[i]] if action_starts else 0.0) for i in range(n)}
+                _sc = {i: start_configs[state_space_map[i]] for i in range(n)}
+                paths, durations = self.get_control_path(
+                    motion_problem,
+                    solution_path,
+                    is_state_space,
+                    _as,
+                    _sc,
+                    map,
+                    n,
+                )
 
-                if is_state_space:
-                    paths, durations = self.get_control_path_from_time_space_solution(
-                        motion_problem, solution_path, len(moving_objects)
-                    )
+                for k, v in paths.items():
+                    remapped_paths[state_space_map[k]] = v
 
-                    for k, v in paths.items():
-                        remapped_paths[state_space_map[k]] = v
-
-                    for k, v in durations.items():
-                        remapped_durations[state_space_map[k]] = v
-
-                else:
-                    raise NotImplementedError("Pure control setup not implemented.")
+                for k, v in durations.items():
+                    remapped_durations[state_space_map[k]] = v
 
                 if len(durations) == 1 and list(durations.values())[0][1] <= d_max[0]:
 
@@ -921,12 +1082,51 @@ class MotionPlanner:
                                         state.rotation().z,
                                     )
                                 )
+            # Record reachable configurations on success
+            for k in moving_objects:
+                reachable_configurations[k] = [start_configs[k], goal_configs[k]]
+
+            # Check temporal validity if action_durations provided
+            if action_durations and remapped_durations:
+                for k in moving_objects:
+                    if k not in remapped_durations:
+                        continue
+                    wait = remapped_durations[k][0] - (action_starts[k] if action_starts else 0.0)
+                    wait = max(0.0, wait)
+                    if remapped_durations[k][1] + wait > action_durations[k]:
+                        is_temporal_valid = False
+                        break
+
         else:
             for k, _ in moving_objects.items():
                 unreachable_configurations[k] = [goal_configs[k]]
+                reachable_configurations[k] = []
                 collision_obstacles[k] = list(obstacles.keys())
 
-            if planner_data:
+            use_bfs = (
+                (not hull_enabled)
+                and action_durations is None
+                and motion_model in {MotionModels.SE2, MotionModels.REEDSSHEPP}
+            )
+            if use_bfs:
+                (
+                    reachable_configurations,
+                    unreachable_configurations,
+                    collision_obstacles,
+                    goal_reached,
+                ) = self._compute_exact_reachability_for_failure(
+                    moving_objects,
+                    motion_model,
+                    start_configs,
+                    goal_configs,
+                    obstacles,
+                    problem_objects,
+                    topological_refinement,
+                    cc,
+                )
+                if goal_reached:
+                    is_valid = True
+            elif planner_data:
 
                 goal_equivalent_area = {}
                 coverage_area = {}
@@ -1031,13 +1231,24 @@ class MotionPlanner:
                     for k, points in area_dict.items():
                         if len(points) > 2:
                             start_time = time.time()
-                            hulls[k] = alphashape.alphashape(np.array(points), 0.1)
+                            alpha = 0 if not is_state_space and motion_model in {MotionModels.REEDSSHEPP, MotionModels.SE2} else 0.1
+                            hulls[k] = alphashape.alphashape(np.array(points), alpha)
                             planning_data.convex_hull_time = time.time() - start_time
 
                     return hulls
 
                 def is_point_in_hull(point, hull):
-                    return hull.contains(Point(*point))
+
+                    is_point_in_hull = False
+
+                    if motion_model in {MotionModels.REEDSSHEPP, MotionModels.SE2}:
+                        is_point_in_hull = hull.contains(Point(*point))
+                    elif motion_model == MotionModels.SE3:
+                        is_point_in_hull = hull.contains([point])[0]
+                    else:
+                        raise NotImplementedError  # Unsupported motion model
+
+                    return is_point_in_hull
 
                 # Compute convex hulls
                 area_source = goal_equivalent_area if is_state_space else coverage_area
@@ -1101,10 +1312,10 @@ class MotionPlanner:
                             point = (
                                 obj.configuration.x,
                                 obj.configuration.y,
-                                obj.configuration.theta,
+                                obj.configuration.z,
                             )
                         else:
-                            continue  # Unsupported motion model
+                            raise NotImplementedError  # Unsupported motion model
 
                         point_in_hull = is_point_in_hull(point, convex_h)
 
@@ -1121,6 +1332,7 @@ class MotionPlanner:
                                 unreachable_configurations[k].append(obj)
 
                 # from tampest.motion.plotting import plot_reachability_data
+
                 # plot_reachability_data(
                 #     map,
                 #     motion_model,
@@ -1140,6 +1352,7 @@ class MotionPlanner:
                 SupportedTopologicalRefinement.OBS,
             ]
             and not solution_path
+            and not use_bfs
         ):
             collision_obstacles = cc.get_collision_objects()
             for k in goal_reached or []:
@@ -1151,9 +1364,571 @@ class MotionPlanner:
 
         return (
             is_valid,
+            is_temporal_valid,
             remapped_paths,
             remapped_durations,
+            reachable_configurations,
             unreachable_configurations,
             collision_obstacles,
             planning_data,
+        )
+
+    def _compute_hull_for_failure(
+        self,
+        planner_data,
+        moving_objects,
+        motion_model,
+        state_space_map,
+        motion_problem,
+        is_state_space,
+        start_configs,
+        goal_configs,
+        problem_objects,
+        topological_refinement,
+        planning_data,
+        cc,
+    ):
+        """Inline hull computation shared by check_motion_constraint and
+        sequential_check_motion_constraint failure paths."""
+
+        map = self.get_map(problem_objects)
+
+        reachable_configurations = {}
+        unreachable_configurations = {}
+        collision_obstacles_out = {}
+        goal_reached = []
+
+        for k, _ in moving_objects.items():
+            unreachable_configurations[k] = [goal_configs[k]]
+            reachable_configurations[k] = []
+            collision_obstacles_out[k] = []
+
+        if not planner_data:
+            return reachable_configurations, unreachable_configurations, collision_obstacles_out, goal_reached
+
+        goal_equivalent_area = {}
+        coverage_area = {}
+        num_vertices = planner_data.numVertices()
+        reachability_list = []
+        goal_vertices = set()
+        all_others = set()
+
+        def extract_sampled_state(state, key=None):
+            if is_state_space:
+                state = state[0]
+            if key is not None:
+                state = state[state_space_map[key]]
+            if motion_model in {MotionModels.REEDSSHEPP, MotionModels.SE2}:
+                return (state.getX(), state.getY())
+            elif motion_model == MotionModels.SE3:
+                return (state.getX(), state.getY(), state.getZ())
+            return None
+
+        for i in range(num_vertices):
+            reachable_data = ob.PlannerData(motion_problem.getSpaceInformation())
+            planner_data.extractReachable(i, reachable_data)
+            vertex = planner_data.getVertex(i)
+            reachability_list.append((vertex, reachable_data))
+            if planner_data.isGoalVertex(i) and vertex not in goal_vertices:
+                goal_vertices.add(vertex)
+            else:
+                all_others.add(vertex)
+            state = vertex.getState()
+            if len(moving_objects) > 1:
+                for key in moving_objects:
+                    sampled_state = extract_sampled_state(state, key)
+                    coverage_area.setdefault(key, [])
+                    if sampled_state not in coverage_area[key]:
+                        coverage_area[key].append(sampled_state)
+            else:
+                sampled_state = extract_sampled_state(state)
+                coverage_area.setdefault(0, [])
+                if sampled_state not in coverage_area[0]:
+                    coverage_area[0].append(sampled_state)
+
+        goal_equivalent_vertices = [
+            v for v, rd in reachability_list
+            if any(gv != v and rd.vertexExists(gv) for gv in goal_vertices)
+        ]
+
+        for vertex in goal_equivalent_vertices:
+            state = vertex.getState()
+            if len(moving_objects) > 1:
+                for key in moving_objects:
+                    sampled_state = extract_sampled_state(state, key)
+                    if sampled_state is None:
+                        continue
+                    goal_equivalent_area.setdefault(key, [])
+                    if sampled_state not in goal_equivalent_area[key]:
+                        goal_equivalent_area[key].append(sampled_state)
+            else:
+                sampled_state = extract_sampled_state(state)
+                goal_equivalent_area.setdefault(0, [])
+                if sampled_state not in goal_equivalent_area[0]:
+                    goal_equivalent_area[0].append(sampled_state)
+
+        start_equivalent_area = {}
+        start_equivalent_vertices = all_others.difference(set(goal_equivalent_vertices))
+        for vertex in start_equivalent_vertices:
+            state = vertex.getState()
+            if len(moving_objects) > 1:
+                for key in moving_objects:
+                    sampled_state = extract_sampled_state(state, key)
+                    if sampled_state is None:
+                        continue
+                    start_equivalent_area.setdefault(key, [])
+                    if sampled_state not in start_equivalent_area[key]:
+                        start_equivalent_area[key].append(sampled_state)
+            else:
+                sampled_state = extract_sampled_state(state)
+                start_equivalent_area.setdefault(0, [])
+                if sampled_state not in start_equivalent_area[0]:
+                    start_equivalent_area[0].append(sampled_state)
+
+        import alphashape as _alphashape
+        import time as _time
+
+        def compute_hulls(area_dict):
+            hulls = {}
+            for kk, points in area_dict.items():
+                if len(points) > 2:
+                    alpha = 0 if not is_state_space and motion_model in {MotionModels.REEDSSHEPP, MotionModels.SE2} else 0.1
+                    hulls[kk] = _alphashape.alphashape(np.array(points), alpha)
+            return hulls
+
+        area_source = goal_equivalent_area if is_state_space else coverage_area
+        hull = compute_hulls(area_source)
+
+        def to_closed_polygon(coords):
+            if len(coords) >= 3:
+                if coords[0] != coords[-1]:
+                    coords = coords + [coords[0]]
+                return Polygon(coords)
+            return None
+
+        for k, convex_h in hull.items():
+            if convex_h is None:
+                continue
+
+            if k in start_equivalent_area and k in goal_equivalent_area:
+                poly1 = to_closed_polygon(goal_equivalent_area[k])
+                poly2 = to_closed_polygon(start_equivalent_area[k])
+                if poly1 is not None:
+                    if poly2 is not None and poly1.intersects(poly2):
+                        goal_reached.append(k)
+                    elif poly2 is None:
+                        for p in start_equivalent_area[k]:
+                            if poly1.contains(Point(*p)):
+                                goal_reached.append(k)
+                                break
+
+            if topological_refinement not in [
+                SupportedTopologicalRefinement.ALL,
+                SupportedTopologicalRefinement.UNREACH,
+            ]:
+                continue
+
+            orig_k = list(moving_objects.keys())[k] if k == 0 and len(moving_objects) == 1 else k
+            start_type = start_configs[orig_k].type
+            start_name = start_configs[orig_k].name
+
+            for obj in problem_objects:
+                if (
+                    obj.type != start_type
+                    or obj.name == start_name
+                    or obj == goal_configs[orig_k]
+                ):
+                    continue
+
+                if motion_model in {MotionModels.REEDSSHEPP, MotionModels.SE2}:
+                    point = (
+                        obj.configuration.x / map.resolution,
+                        map.image.size[1] - obj.configuration.y / map.resolution,
+                    )
+                elif motion_model == MotionModels.SE3:
+                    point = (obj.configuration.x, obj.configuration.y, obj.configuration.z)
+                else:
+                    raise NotImplementedError
+
+                if motion_model in {MotionModels.REEDSSHEPP, MotionModels.SE2}:
+                    point_in_hull = convex_h.contains(Point(*point))
+                else:
+                    point_in_hull = convex_h.contains([point])[0]
+
+                if (not point_in_hull and not is_state_space) or (point_in_hull and is_state_space):
+                    unreachable_configurations.setdefault(orig_k, [])
+                    if obj not in unreachable_configurations[orig_k]:
+                        unreachable_configurations[orig_k].append(obj)
+
+        if topological_refinement in [
+            SupportedTopologicalRefinement.ALL,
+            SupportedTopologicalRefinement.OBS,
+        ]:
+            collision_obstacles_out = cc.get_collision_objects()
+            for k in goal_reached:
+                collision_obstacles_out.pop(k, None)
+
+        return reachable_configurations, unreachable_configurations, collision_obstacles_out, goal_reached
+
+    def _compute_exact_reachability_for_failure(
+        self,
+        moving_objects,
+        motion_model,
+        start_configs,
+        goal_configs,
+        obstacles,
+        problem_objects,
+        topological_refinement,
+        cc,
+    ):
+        """BFS-based exact reachability on the map image (2D only).
+
+        Alternative to _compute_hull_for_failure for SE2/ReedsShepp spaces.
+        Computes connected components from start and goal pixels after eroding
+        the map by the robot footprint. Returns the same 4-tuple.
+        """
+        if _cv2 is None:
+            raise ImportError(
+                "_compute_exact_reachability_for_failure requires cv2 (pip install opencv-python)"
+            )
+
+        map = self.get_map(problem_objects)
+
+        reachable_configurations = {}
+        unreachable_configurations = {}
+        collision_obstacles_out = {}
+        goal_reached = []
+
+        for k, obj in moving_objects.items():
+            reachable_configurations[k] = [start_configs[k]]
+            unreachable_configurations[k] = [goal_configs[k]]
+            collision_obstacles_out[k] = list(obstacles.keys())
+
+            # Build C-space image with obstacles painted on
+            open_cv_image = np.array(map.image)
+            for o, cfg in obstacles.items():
+                obstacle_poly = cc.get_polygon_from_config(o, cfg)
+                pts = np.array(obstacle_poly.exterior.coords, dtype=np.int32).reshape((-1, 1, 2))
+                _cv2.fillPoly(open_cv_image, [pts], (0, 0, 0))
+
+            gray = _cv2.cvtColor(open_cv_image, _cv2.COLOR_BGR2GRAY)
+            binary = np.where(gray > 200, 1, 0).astype(np.uint8)
+
+            # Erode by robot diameter to get C-space free cells
+            diam = max(1, int(
+                max(
+                    np.linalg.norm(np.array(p1) - np.array(p2))
+                    for p1, p2 in combinations(obj.footprint, 2)
+                )
+                / map.resolution
+            ))
+            kernel = _cv2.getStructuringElement(_cv2.MORPH_ELLIPSE, (diam, diam))
+            cspace = _cv2.erode(binary, kernel, iterations=1)
+
+            def _bfs(start_xy):
+                h, w = cspace.shape
+                sx, sy = int(start_xy[0]), int(start_xy[1])
+                reachable = np.zeros_like(cspace, dtype=np.uint8)
+                if not (0 <= sx < w and 0 <= sy < h) or cspace[sy, sx] == 0:
+                    return reachable
+                queue = deque([(sx, sy)])
+                visited = {(sx, sy)}
+                while queue:
+                    x, y = queue.popleft()
+                    if not (0 <= x < w and 0 <= y < h) or cspace[y, x] == 0:
+                        continue
+                    reachable[y, x] = 255
+                    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                        nb = (x + dx, y + dy)
+                        if nb not in visited:
+                            visited.add(nb)
+                            queue.append(nb)
+                return reachable
+
+            def _cfg_to_px(cfg):
+                return (
+                    cfg.configuration.x / map.resolution,
+                    map.image.size[1] - cfg.configuration.y / map.resolution,
+                )
+
+            area_from_start = _bfs(_cfg_to_px(start_configs[k]))
+            area_from_goal = _bfs(_cfg_to_px(goal_configs[k]))
+
+            def _in_area(cfg, area):
+                px, py = _cfg_to_px(cfg)
+                xi, yi = int(px), int(py)
+                h, w = area.shape
+                return 0 <= xi < w and 0 <= yi < h and area[yi, xi] > 0
+
+            # Check goal reachability from start
+            if _in_area(goal_configs[k], area_from_start):
+                goal_reached.append(k)
+                reachable_configurations[k].append(goal_configs[k])
+                unreachable_configurations[k] = []
+                continue
+
+            if topological_refinement not in [
+                SupportedTopologicalRefinement.ALL,
+                SupportedTopologicalRefinement.UNREACH,
+            ]:
+                continue
+
+            start_type = start_configs[k].type
+            start_name = start_configs[k].name
+            for candidate in problem_objects:
+                if (
+                    candidate.type != start_type
+                    or candidate.name == start_name
+                    or candidate == goal_configs[k]
+                ):
+                    continue
+                if _in_area(candidate, area_from_start):
+                    reachable_configurations[k].append(candidate)
+                if _in_area(candidate, area_from_goal):
+                    unreachable_configurations[k].append(candidate)
+
+        return reachable_configurations, unreachable_configurations, collision_obstacles_out, goal_reached
+
+    def sequential_check_motion_constraint(
+        self,
+        moving_objects: Dict[int, MovableObject],
+        start_configs: Dict[int, ConfigurationObject],
+        goal_configs: Dict[int, ConfigurationObject],
+        obstacles,
+        problem_objects,
+        *,
+        action_starts: Optional[Dict[int, float]] = None,
+        action_durations: Optional[Dict[int, float]] = None,
+        d_max: Optional[Dict[int, float]] = None,
+        safety_distance: Optional[float] = None,
+        planning_time: Optional[float] = 1.0,
+        interpolate: Optional[bool] = True,
+        simplified: Optional[bool] = True,
+        distance: Optional[float] = None,
+        hull_enabled: Optional[bool] = False,
+        motion_planner: Optional[SupportedPlanner] = SupportedPlanner.RRT,
+        topological_refinement: Optional[
+            SupportedTopologicalRefinement
+        ] = SupportedTopologicalRefinement.ALL,
+        max_radius_bound: Optional[bool] = False,
+    ):
+        """Sequential per-object motion planning with trajectory CC.
+
+        Plans for each moving object one at a time in insertion order.
+        Each subsequent robot's CC receives all previously solved trajectories
+        so it avoids those paths.  Returns the same 8-tuple as
+        check_motion_constraint.
+        """
+
+        is_valid = True
+        is_temporal_valid = True
+
+        map = self.get_map(problem_objects)
+        state_space_map = {i: k for i, k in enumerate(moving_objects)}
+
+        reachable_configurations = {}
+        unreachable_configurations = {}
+        collision_obstacles = {}
+        planning_data_all = {}
+
+        remapped_paths = {}
+        remapped_durations = {}
+
+        obj_checked = {}
+        idx_checked = []
+
+        for idx, obj in moving_objects.items():
+
+            motion_model = obj.motion_model
+
+            # Build trajectories dict: only those that are still active when idx starts
+            paths_to_check = {}
+            for prev_idx in idx_checked:
+                dur = remapped_durations.get(state_space_map[prev_idx])
+                if dur and dur[0] + dur[1] <= (action_starts[idx] if action_starts else 0.0):
+                    continue
+                if state_space_map[prev_idx] in remapped_paths:
+                    paths_to_check[state_space_map[prev_idx]] = remapped_paths[state_space_map[prev_idx]]
+
+            obj_checked[obj] = idx
+            idx_checked.append(idx)
+
+            if motion_model in {MotionModels.REEDSSHEPP, MotionModels.SE2}:
+                cc = CollisionChecker2D(
+                    moving_objects={idx: obj},
+                    start_configs={idx: start_configs[idx]},
+                    delays={idx: action_starts[idx]} if action_starts else None,
+                    index_map=state_space_map,
+                    d_max=list(d_max.values()) if d_max else None,
+                    map=map,
+                    movable_obstacles=obstacles,
+                    topological_refinement=topological_refinement,
+                    max_radius_bound=max_radius_bound,
+                    sequential_check=True,
+                    trajectories=paths_to_check,
+                    safety_distance=safety_distance,
+                    all_movable_objects=moving_objects,
+                    all_start_configs=start_configs,
+                    all_goal_configs=goal_configs,
+                    action_timings=(
+                        {k: (action_starts[k], action_durations[k]) for k in action_starts}
+                        if action_durations and action_starts
+                        else None
+                    ),
+                )
+            elif motion_model == MotionModels.SE3:
+                cc = CollisionChecker3D(
+                    moving_objects={idx: obj},
+                    start_configs={idx: start_configs[idx]},
+                    delays={idx: action_starts[idx]} if action_starts else None,
+                    index_map=state_space_map,
+                    d_max=list(d_max.values()) if d_max else None,
+                    map=map,
+                    movable_obstacles=obstacles,
+                    topological_refinement=topological_refinement,
+                    max_radius_bound=max_radius_bound,
+                    sequential_check=True,
+                    trajectories=paths_to_check,
+                    safety_distance=safety_distance,
+                    all_movable_objects=moving_objects,
+                    all_start_configs=start_configs,
+                    all_goal_configs=goal_configs,
+                    action_timings=(
+                        {k: (action_starts[k], action_durations[k]) for k in action_starts}
+                        if action_durations and action_starts
+                        else None
+                    ),
+                )
+            else:
+                raise Exception(f"Unsupported motion model: {motion_model}")
+
+            motion_problem = self.set_problem(
+                map,
+                state_space_map,
+                {0: obj},
+                {0: start_configs[idx]},
+                {0: goal_configs[idx]},
+                motion_planner,
+                cc,
+                d_max={0: d_max[idx]} if d_max else None,
+                distance=distance,
+                action_starts={0: 0},
+                sequential_check=True,
+            )
+
+            if simplified:
+                print("simplifySolution() not available in Control Space. Giving back original solution.")
+                simplified = False
+
+            solution_path = None
+            abort_current = False
+            single_time = planning_time
+
+            for _attempt in range(5):
+                if solution_path or abort_current:
+                    break
+
+                print(f"{obj} (idx {idx}) to start at {action_starts.get(idx, 0.0)} (d_max {d_max.get(idx) if d_max else None})")
+
+                solution_path, planner_data, obj_planning_data = self.get_solution(
+                    motion_problem,
+                    planning_time=single_time,
+                    interpolate=interpolate,
+                    simplified=simplified,
+                )
+                planning_data_all[idx] = obj_planning_data
+
+                if solution_path:
+                    reachable_configurations[idx] = [start_configs[idx]]
+
+                    is_time_space = d_max is not None and d_max.get(idx) is not None
+
+                    if is_time_space and motion_model in {MotionModels.REEDSSHEPP, MotionModels.SE2}:
+                        paths, durations = self.get_control_path(
+                            motion_problem,
+                            solution_path,
+                            True,
+                            {0: action_starts[idx] if action_starts else 0.0},
+                            {0: start_configs[idx]},
+                            map,
+                            1,
+                            sequential_check=True,
+                        )
+                        remapped_paths[state_space_map[idx]] = paths[0]
+                        remapped_durations[state_space_map[idx]] = durations[0]
+
+                        wait = durations[0][0] - (action_starts[idx] if action_starts else 0.0)
+                        wait = max(0.0, wait)
+                        if action_durations and durations[0][1] + wait > action_durations[idx]:
+                            is_temporal_valid = False
+                            abort_current = True
+
+                    elif motion_model in {MotionModels.REEDSSHEPP, MotionModels.SE2}:
+                        remapped_paths.setdefault(state_space_map[idx], [])
+                        for state in solution_path.getStates():
+                            remapped_paths[state_space_map[idx]].append(
+                                (state.getX(), state.getY(), state.getYaw())
+                            )
+                    else:
+                        raise NotImplementedError()
+
+                single_time *= 2
+
+            if abort_current:
+                return (
+                    is_valid,
+                    is_temporal_valid,
+                    remapped_paths,
+                    remapped_durations,
+                    reachable_configurations,
+                    unreachable_configurations,
+                    collision_obstacles,
+                    planning_data_all,
+                )
+
+            if not solution_path:
+                is_valid = False
+                is_temporal_valid = False
+
+                is_time_space = d_max is not None and d_max.get(idx) is not None
+                (
+                    reachable_configurations,
+                    unreachable_configurations,
+                    collision_obstacles,
+                    _goal_reached,
+                ) = self._compute_hull_for_failure(
+                    planner_data,
+                    {0: obj},
+                    motion_model,
+                    state_space_map,
+                    motion_problem,
+                    is_time_space,
+                    {0: start_configs[idx]},
+                    {0: goal_configs[idx]},
+                    problem_objects,
+                    topological_refinement,
+                    obj_planning_data,
+                    cc,
+                )
+
+            if topological_refinement in [
+                SupportedTopologicalRefinement.ALL,
+                SupportedTopologicalRefinement.OBS,
+            ] and not solution_path:
+                raw_obs = cc.get_collision_objects()
+                collision_obstacles[idx] = raw_obs.get(idx, [])
+
+            if solution_path:
+                reachable_configurations[idx].append(goal_configs[idx])
+
+        print("remapped_durations:", remapped_durations)
+        return (
+            is_valid,
+            is_temporal_valid,
+            remapped_paths,
+            remapped_durations,
+            reachable_configurations,
+            unreachable_configurations,
+            collision_obstacles,
+            planning_data_all,
         )

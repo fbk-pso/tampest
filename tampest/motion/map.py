@@ -1,17 +1,17 @@
-# Copyright (C) 2024-2025 PSO Unit, Fondazione Bruno Kessler
+# Copyright (C) 2024-2026 PSO Unit, Fondazione Bruno Kessler
 # This file is part of TAMPEST.
 #
 # TAMPEST is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published by
+# it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # TAMPEST is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU Lesser General Public License for more details.
+# GNU General Public License for more details.
 #
-# You should have received a copy of the GNU Lesser General Public License
+# You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 
@@ -22,14 +22,13 @@ from typing import Optional, Tuple, Union
 from shapely.affinity import *
 import yaml
 import trimesh
+from abc import ABC, abstractmethod
 
 
-class Map:
+class Map(ABC):
 
-    def __init__(self) -> None:
-        pass
-
-    def get_from_file(self, yaml_file: str) -> Union[Map2D, Map3D, None]:
+    @staticmethod
+    def get_from_file(yaml_file: str) -> Union[Map2D, Map3D, None]:
         """Get a `Map` from a `yaml_file`."""
         map = None
         with open(yaml_file) as f:
@@ -44,8 +43,13 @@ class Map:
                 raise NotImplementedError
         return map
 
+    @abstractmethod
+    def set_from_file(self, yaml_file: str):
+        """Set a `Map` from a `yaml_file`."""
+        raise NotImplementedError
 
-class Map3D:
+
+class Map3D(Map):
 
     def __init__(self, mesh: Optional[trimesh.Trimesh] = None) -> None:
         self._mesh = mesh
@@ -85,11 +89,11 @@ class Map3D:
             )
 
 
-class Map2D:
+class Map2D(Map):
 
     def __init__(
         self,
-        image: Optional[Image] = None,
+        image: Optional[Image.Image] = None,
         resolution: Optional[float] = None,
         origin: Optional[Tuple[float, ...]] = None,
         negate: Optional[int] = None,
@@ -117,12 +121,12 @@ class Map2D:
             return False
 
     @property
-    def image(self) -> Image:
+    def image(self) -> Image.Image:
         """Returns the `Map` `image`."""
         return self._image
 
     @image.setter
-    def image(self, image: Image):
+    def image(self, image: Image.Image):
         """Sets the `Map` `image`."""
         self._image = image
 
@@ -132,7 +136,7 @@ class Map2D:
         return self._resolution
 
     @resolution.setter
-    def resolution(self, resolution):
+    def resolution(self, resolution: float):
         """Sets the `Map` `resolution`."""
         self._resolution = resolution
 
@@ -142,7 +146,7 @@ class Map2D:
         return self._origin
 
     @origin.setter
-    def origin(self, origin):
+    def origin(self, origin: Tuple[float, ...]):
         """Sets the `Map` `origin`."""
         self._origin = origin
 
@@ -152,7 +156,7 @@ class Map2D:
         return self._negate
 
     @negate.setter
-    def negate(self, negate):
+    def negate(self, negate: int):
         """Sets the `Map` `negate`."""
         self._negate = negate
 
@@ -162,7 +166,7 @@ class Map2D:
         return self._occupied_thresh
 
     @occupied_thresh.setter
-    def occupied_thresh(self, occupied_thresh):
+    def occupied_thresh(self, occupied_thresh: float):
         """Sets the `Map` `occupied_thresh`."""
         self._occupied_thresh = occupied_thresh
 
@@ -172,11 +176,11 @@ class Map2D:
         return self._free_thresh
 
     @free_thresh.setter
-    def free_thresh(self, free_thresh):
+    def free_thresh(self, free_thresh: float):
         """Sets the `Map` `free_thresh`."""
         self._free_thresh = free_thresh
 
-    def get_image(self, filename: str) -> Image:
+    def get_image(self, filename: str) -> Image.Image:
         """Load an `image` from a `filename`."""
         if os.path.exists(filename):
             return Image.open(filename)

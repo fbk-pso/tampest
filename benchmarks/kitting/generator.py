@@ -1,17 +1,17 @@
-# Copyright (C) 2024-2025 PSO Unit, Fondazione Bruno Kessler
+# Copyright (C) 2024-2026 PSO Unit, Fondazione Bruno Kessler
 # This file is part of TAMPEST.
 #
 # TAMPEST is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published by
+# it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # TAMPEST is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU Lesser General Public License for more details.
+# GNU General Public License for more details.
 #
-# You should have received a copy of the GNU Lesser General Public License
+# You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 
@@ -109,8 +109,8 @@ class SetupGenerator:
                 doors[i + 1] = {}
 
             # open
-            doors[i]["open"] = [18 + 4.6 * i, 11, math.pi / 2.0]
-            doors[i + 1]["open"] = [18 + 4.6 * i, 19.8, math.pi / 2.0]
+            doors[i]["open"] = [20.8 + 4.6 * i, 11, math.pi / 2.0]
+            doors[i + 1]["open"] = [20.8 + 4.6 * i, 19.8, math.pi / 2.0]
 
             # close
             doors[i]["close"] = [25 + 4.6 * i, 11.0, math.pi / 2.0]

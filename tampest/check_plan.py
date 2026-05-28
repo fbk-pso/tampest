@@ -1,23 +1,23 @@
-# Copyright (C) 2024-2025 PSO Unit, Fondazione Bruno Kessler
+# Copyright (C) 2024-2026 PSO Unit, Fondazione Bruno Kessler
 # This file is part of TAMPEST.
 #
 # TAMPEST is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License as published by
+# it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # TAMPEST is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU Lesser General Public License for more details.
+# GNU General Public License for more details.
 #
-# You should have received a copy of the GNU Lesser General Public License
+# You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 
 from unified_planning.engines import UPSequentialSimulator
 from unified_planning.engines import TimeTriggeredPlanValidator
-from unified_planning.model.tamp.action import (
+from unified_planning.model.motion.action import (
     InstantaneousMotionAction,
     DurativeMotionAction,
 )
@@ -128,7 +128,6 @@ def check_plan(
     motion_planning_time,
     interpolate,
     simplified,
-    tolerance,
     distance,
     motion_planner,
     topological_refinement,
@@ -144,6 +143,7 @@ def check_plan(
 
     if plan.kind == PlanKind.TIME_TRIGGERED_PLAN:
         validator = TimeTriggeredPlanValidator()
+        validator.skip_checks = True
         res = validator.validate(problem, plan)
         em = problem.environment.expression_manager
 
@@ -178,34 +178,32 @@ def check_plan(
                     d_max = getActionMaxDuration(state, ai[1])
 
                     motion_constraints_key = []
-                    for i, mcl in a.timed_motion_constraints.items():
-                        for mc in mcl:
-                            movable, starting, waypoint, obstacles = (
-                                getConstraintParams(state, ai[1], mc)
+                    for mc in a.motion_constraints:
+                        movable, starting, waypoint, obstacles = (
+                            getConstraintParams(state, ai[1], mc)
+                        )
+                        static_obstacles_pos_list = []
+                        if obstacles:
+                            static_obstacles_pos_list = [
+                                obstacles[k]
+                                for k in sorted(obstacles.keys(), key=str)
+                            ]
+                        motion_constraints_key.append(
+                            (
+                                movable,
+                                starting,
+                                waypoint,
+                                tuple(static_obstacles_pos_list),
                             )
-                            static_obstacles_pos_list = []
-                            if obstacles:
-                                static_obstacles_pos_list = [
-                                    obstacles[k]
-                                    for k in sorted(obstacles.keys(), key=str)
-                                ]
-                            motion_constraints_key.append(
-                                (
-                                    i,
-                                    movable,
-                                    starting,
-                                    waypoint,
-                                    tuple(static_obstacles_pos_list),
-                                )
-                            )
-                            constraints_map[(ai[1], mc)] = n
-                            motion_constraints[(ai[1], mc)] = (
-                                action_start - start_zero,
-                                d_max,
-                                *getConstraintParams(state, ai[1], mc),
-                            )
-                            n += 1
-                    motion_constraints_key.sort(key=lambda x: str(x[0]))
+                        )
+                        constraints_map[(ai[1], mc)] = n
+                        motion_constraints[(ai[1], mc)] = (
+                            action_start - start_zero,
+                            ai[2],  # activity_duration (actual plan duration)
+                            d_max,
+                            *getConstraintParams(state, ai[1], mc),
+                        )
+                        n += 1
 
                     action_keys.append(
                         (
@@ -241,6 +239,7 @@ def check_plan(
                 # current_durations = {ai: current_duration}
                 (
                     is_valid,
+                    _is_temporal_valid,
                     paths,
                     current_durations,
                     unreachable_goals,
@@ -253,11 +252,11 @@ def check_plan(
                     planning_time=motion_planning_time,
                     interpolate=interpolate,
                     simplified=simplified,
-                    tolerance=tolerance,
                     distance=distance,
                     motion_planner=motion_planner,
                     topological_refinement=topological_refinement,
                     max_radius_bound=max_radius_bound,
+                    hull_enabled=True,
                 )
 
                 print("is_valid:", is_valid)
@@ -370,8 +369,10 @@ def check_plan(
 
                         (
                             is_valid,
+                            _is_temporal_valid,
                             path,
                             _,
+                            _reachable,
                             unreachable_goals,
                             static_obstacles,
                             mc_planning_data,
@@ -384,11 +385,11 @@ def check_plan(
                             planning_time=motion_planning_time,
                             interpolate=interpolate,
                             simplified=simplified,
-                            tolerance=tolerance,
                             distance=distance,
                             motion_planner=motion_planner,
                             topological_refinement=topological_refinement,
                             max_radius_bound=max_radius_bound,
+                            hull_enabled=True,
                         )
 
                         motion_planning_data[mc] = mc_planning_data
@@ -400,14 +401,16 @@ def check_plan(
                         conds = []
                         conds.append(em.Equals(mc.movable, movable))
                         conds.append(em.Equals(mc.starting, starting))
-                        for o in static_obstacles[0]:
-                            fe = mc.static_obstacles[o]
-                            conds.append(em.Equals(fe, state.get_value(fe)))
+                        if 0 in static_obstacles:
+                            for o in static_obstacles[0]:
+                                fe = mc.static_obstacles[o]
+                                conds.append(em.Equals(fe, state.get_value(fe)))
                         unreachable_conds = []
                         for wp in mc.waypoints:
-                            for u in unreachable_goals[0]:
-                                # unreachable_conds.append(em.Not(em.Equals(wp, u)))
-                                unreachable_conds.append(em.Equals(wp, u))
+                            if 0 in unreachable_goals:
+                                for u in unreachable_goals[0]:
+                                    # unreachable_conds.append(em.Not(em.Equals(wp, u)))
+                                    unreachable_conds.append(em.Equals(wp, u))
                         # new_conds.append((a, em.Implies(em.And(conds), em.And(unreachable_conds))))
                         new_cond = (
                             a,
