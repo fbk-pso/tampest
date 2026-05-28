@@ -623,14 +623,7 @@ class MotionPlanner:
             SupportedTopologicalRefinement
         ] = SupportedTopologicalRefinement.ALL,
         max_radius_bound: Optional[bool] = False,
-    ) -> Tuple[
-        bool,
-        Dict[Tuple[MotionActivity, MotionConstraint], Any],
-        Dict[MotionActivity, Tuple[float, float]],
-        Dict[Tuple[MotionActivity, MotionConstraint], List[ConfigurationObject]],
-        Dict[Tuple[MotionActivity, MotionConstraint], List[MovableObject]],
-        MotionPlanningData,
-    ]:
+    ):
 
         action_starts = {}
         moving_objs = {}
