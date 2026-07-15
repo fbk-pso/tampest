@@ -22,7 +22,7 @@ setup(
         "alphashape==1.3.1",
         "ompl==1.7.0",
         "pysmt @ git+https://github.com/pysmt/pysmt.git",
-        "tempest @ git+https://github.com/fbk-pso/tempest.git",
+        "up-tempest==0.1.0",
     ],
     extras_require={
         "plot": [
