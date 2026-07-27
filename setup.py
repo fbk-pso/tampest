@@ -11,7 +11,7 @@ setup(
     license="GPL-3.0",
     python_requires=">=3.10",
     install_requires=[
-        "numpy==1.26.1",
+        "numpy>=1.26,<2.5",
         "shapely==2.0.7",
         "trimesh==4.6.6",
         "Pillow==10.2.0",
@@ -26,7 +26,7 @@ setup(
     ],
     extras_require={
         "plot": [
-            "matplotlib==3.8.3",
+            "matplotlib>=3.9,<4",
             "scipy==1.15.2",
             "pyvista==0.48.2",
         ],

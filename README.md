@@ -32,6 +32,22 @@ Optionally, install the visualization libraries (`matplotlib`, `scipy`, `pyvista
 pip3 install "tampest[plot] @ git+https://github.com/fbk-pso/tampest.git"
 ```
 
+### Required: patch OMPL 1.7.0
+
+The OMPL 1.7.0 wheel loads `libompl` twice (a redundant `RTLD_GLOBAL` preload in
+`ompl/util/__init__.py` on top of the auditwheel-repaired copy). This makes the
+Python interpreter abort with `free(): invalid pointer` / `double free` at exit
+(exit code 134), *after* your program has finished — which can break scripts and
+CI that check exit codes. Run the bundled patch once, per environment, after
+installing dependencies:
+```bash
+python3 scripts/patch_ompl.py
+```
+The patch comments out the redundant preload; it is idempotent and safe to
+re-run. It must be re-applied whenever OMPL is reinstalled (e.g. a fresh
+virtualenv). We stay on OMPL 1.7.0 rather than upgrading to 2.x because the 2.x
+Python bindings drop the `STRRTstar` space-time planner that TAMPEST requires.
+
 ### Optional: task planners for meta-engines
 
 `TampMetaEngine` can wrap any UP-compatible task planner. Install only the ones you need:

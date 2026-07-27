@@ -21,7 +21,6 @@ import os
 import math
 from matplotlib import patches
 from matplotlib import pyplot as plt
-from matplotlib.cm import get_cmap
 from matplotlib.patches import Polygon as MplPolygon
 import numpy as np
 from trimesh import transformations
@@ -187,7 +186,7 @@ def plot_2d_reachability_data(
     _, ax = plt.subplots()
     ax.imshow(map.image)
     y_bound = map.image.size[1]
-    cmap = get_cmap("tab10")  # Color map with 10 distinct colors
+    cmap = plt.get_cmap("tab10")  # Color map with 10 distinct colors
     keys = sorted(set(points.keys()) if points else set())
     key_to_color = {k: cmap(i % 10) for i, k in enumerate(keys)}
     used_labels = set()
